@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from app import repository
 from app.config import settings
 from app.db import create_client
-from app.routes import health, results
+from app.routes import health, ingest, results
 
 
 @asynccontextmanager
@@ -24,9 +24,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Line Monitor",
-    version="0.2.0",
+    version="0.4.0",
     lifespan=lifespan,
 )
 
 app.include_router(health.router)
 app.include_router(results.router)
+app.include_router(ingest.router)
