@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from app import repository
 from app.models import ResultIn
+from app.ws_manager import manager
 
 router = APIRouter()
 
@@ -28,6 +29,7 @@ async def station_ws(websocket: WebSocket):
                 continue
 
             doc = await repository.insert_result(db, item)
+            await manager.broadcast({"type": "result", "data": doc})
 
             # ack
             await websocket.send_json({"ok": True, "id": doc["id"]})
