@@ -59,3 +59,62 @@ async def find_results(db: AsyncDatabase, limit: int = 20, **filters) -> list[di
 
 async def latest_results(db: AsyncDatabase, limit: int = 10) -> list[dict]:
     return await find_results(db, limit=limit)
+
+
+async def yield_by_station(db: AsyncDatabase, lot=None, since=None) -> list[dict]:
+    pipeline = [
+        # 1 match for filter
+        {"$match": build_filter(lot=lot, since=since)},
+        # 2 group for calculation
+        {
+            "$group": {
+                "_id": "$station",
+                "total": {"$sum": 1},
+                "passed": {"$sum": {"$cond": [{"$eq": ["$result", "pass"]}, 1, 0]}},
+            }
+        },
+        # 3 format of request
+        {
+            "$project": {
+                "_id": 0,
+                "station": "$_id",
+                "total": 1,
+                "passed": 1,
+                "yield_rate": {"$divide": ["$passed", "$total"]},
+            }
+        },
+        # 4 sort
+        {"$sort": {"station": 1}},
+    ]
+
+    cursor = await db[RESULTS].aggregate(pipeline)
+    return await cursor.to_list()
+
+
+async def top_failures(
+    db: AsyncDatabase, station=None, lot=None, since=None, limit: int = 5
+) -> list[dict]:
+    match = build_filter(station=station, lot=lot, since=since, result="fail")
+
+    pipeline = [
+        {"$match": match},
+        {
+            "$group": {
+                "_id": {"station": "$station", "fail_code": "$fail_code"},
+                "count": {"$sum": 1},
+            }
+        },
+        {"$sort": {"count": -1}},
+        {"$limit": max(1, min(limit, 50))},
+        {
+            "$project": {
+                "_id": 0,
+                "station": "$_id.station",
+                "fail_code": "$_id.fail_code",
+                "count": 1,
+            }
+        },
+    ]
+
+    cursor = await db[RESULTS].aggregate(pipeline)
+    return await cursor.to_list()

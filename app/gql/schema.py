@@ -1,6 +1,6 @@
 """define GQL  Query/Mutation behavior."""
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import strawberry
 from fastapi import Request
@@ -37,6 +37,28 @@ class Result:
         )
 
 
+@strawberry.type(description="yield_rate of station")
+class StationYield:
+    station: str
+    total: int
+    passed: int
+    yield_rate: float
+
+
+@strawberry.type(description="fail stastic")
+class FailureCount:
+    station: str
+    fail_code: str
+    count: int
+
+
+def minutes_ago(minutes: int | None) -> datetime | None:
+    if minutes is None:
+        return None
+
+    return datetime.now(timezone.utc) - timedelta(minutes=minutes)
+
+
 # Query Entry
 @strawberry.type
 class Query:
@@ -62,6 +84,36 @@ class Query:
             until=until,
         )
         return [Result.from_doc(d) for d in docs]
+
+    @strawberry.field(
+        description="yield rate of station, return all time when input without a minute"
+    )
+    async def yield_by_station(
+        self, info: Info, lot: str | None = None, since_minutes: int | None = None
+    ) -> list[StationYield]:
+        rows = await repository.yield_by_station(
+            info.context["db"], lot=lot, since=minutes_ago(since_minutes)
+        )
+        return [StationYield(**r) for r in rows]
+
+    @strawberry.field(description="top failure cause")
+    async def top_failures(
+        self,
+        info: Info,
+        station: str | None = None,
+        lot: str | None = None,
+        since_minutes: int | None = None,
+        limit: int = 5,
+    ) -> list[FailureCount]:
+        rows = await repository.top_failures(
+            info.context["db"],
+            station=station,
+            lot=lot,
+            since=minutes_ago(since_minutes),
+            limit=limit,
+        )
+
+        return [FailureCount(**r) for r in rows]
 
 
 schema = strawberry.Schema(query=Query)
