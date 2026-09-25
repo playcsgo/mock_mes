@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from app import repository
 from app.config import settings
 from app.db import create_client
+from app.gql.schema import graphal_router
 from app.routes import dashboard, health, ingest, results
 
 
@@ -24,7 +25,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Line Monitor",
-    version="0.6.0",
+    version="0.7.0",
     lifespan=lifespan,
 )
 
@@ -32,3 +33,4 @@ app.include_router(health.router)
 app.include_router(results.router)
 app.include_router(ingest.router)
 app.include_router(dashboard.router)
+app.include_router(graphal_router, prefix="/graphql")
