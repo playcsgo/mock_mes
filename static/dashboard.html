@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Line Monitor — 產線看板</title>
+<style>
+  /*  Andon stype */
+  :root {
+    --bg: #14171a; --panel: #1d2125; --line: #2c3238; --text: #d9dee3;
+    --muted: #7d8791; --ok: #3ecf6e; --warn: #f2b33d; --bad: #ef5350;
+    --mono: "JetBrains Mono", "Cascadia Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+  header { display: flex; align-items: baseline; gap: 16px; padding: 18px 24px;
+           border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0; font-size: 20px; font-weight: 600; }
+  #conn { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+  #conn.on::before  { content: "● "; color: var(--ok); }
+  #conn.off::before { content: "● "; color: var(--bad); }
+  main { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; padding: 20px 24px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  h2 { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--muted); }
+
+  /* station session */
+  #stations { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--muted);
+          padding: 12px 14px; }
+  .tile.ok   { border-top-color: var(--ok); }
+  .tile.warn { border-top-color: var(--warn); }
+  .tile.bad  { border-top-color: var(--bad); }
+  .tile .name { font-family: var(--mono); color: var(--muted); }
+  .tile .rate { font-family: var(--mono); font-size: 40px; font-weight: 700; line-height: 1.1; }
+  .tile.bad .rate { color: var(--bad); }
+  .tile .count { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+
+  section + section { margin-top: 24px; }
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 13px; }
+  td, th { padding: 5px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+  th { color: var(--muted); font-weight: 500; }
+  #feed { list-style: none; margin: 0; padding: 0; font-family: var(--mono); font-size: 13px;
+          max-height: 70vh; overflow-y: auto; }
+  #feed li { padding: 4px 8px; border-bottom: 1px solid var(--line); }
+  #feed li.fail { color: var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <h1>產線測試即時看板</h1>
+  <span id="conn" class="off">未連線</span>
+</header>
+
+<main>
+  <div>
+    <section>
+      <h2>各站良率（最近 60 分鐘，即時更新）</h2>
+      <div id="stations"></div>
+    </section>
+    <section>
+      <h2>最常見失敗原因（每 30 秒更新）</h2>
+      <table>
+        <thead><tr><th>站</th><th>失敗代碼</th><th>次數</th></tr></thead>
+        <tbody id="failures"></tbody>
+      </table>
+    </section>
+  </div>
+  <section>
+    <h2>即時測試紀錄</h2>
+    <ul id="feed"></ul>
+  </section>
+</main>
+
+<script>
+// ===== collection data =====
+let stations = {};
+const FEED_MAX = 50;     
+const WINDOW_MIN = 60;
+
+// ===== Get data =====
+async function gql(query, variables = {}) {
+  const res = await fetch("/graphql", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, variables }),
+  });
+  const json = await res.json();
+  if (json.errors) throw new Error(json.errors[0].message);
+  return json.data;
+}
+
+async function loadStats() {
+  const data = await gql(`
+    query ($m: Int) {
+      yieldByStation(sinceMinutes: $m) { station total passed }
+      topFailures(sinceMinutes: $m, limit: 8) { station failCode count }
+    }`, { m: WINDOW_MIN });
+  stations = {};
+  for (const s of data.yieldByStation) {
+    stations[s.station] = { total: s.total, passed: s.passed };
+  }
+  renderStations();
+  renderFailures(data.topFailures);
+}
+
+// ===== page =====
+function level(rate) {
+  if (rate >= 0.95) return "ok";
+  if (rate >= 0.90) return "warn";
+  return "bad";
+}
+
+function renderStations() {
+  const box = document.getElementById("stations");
+  box.replaceChildren();
+  for (const name of Object.keys(stations).sort()) {
+    const { total, passed } = stations[name];
+    const rate = total ? passed / total : 1;
+    const tile = document.createElement("div");
+    tile.className = "tile " + level(rate);
+    const n = document.createElement("div"); n.className = "name"; n.textContent = name;
+    const r = document.createElement("div"); r.className = "rate";
+    r.textContent = (rate * 100).toFixed(1) + "%";
+    const c = document.createElement("div"); c.className = "count";
+    c.textContent = `${passed} / ${total} pass`;
+    tile.append(n, r, c);
+    box.append(tile);
+  }
+}
+
+function renderFailures(rows) {
+  const body = document.getElementById("failures");
+  body.replaceChildren();
+  for (const f of rows) {
+    const tr = document.createElement("tr");
+    for (const v of [f.station, f.failCode, f.count]) {
+      const td = document.createElement("td"); td.textContent = v; tr.append(td);
+    }
+    body.append(tr);
+  }
+}
+
+function addFeed(r) {
+  const li = document.createElement("li");
+  if (r.result === "fail") li.className = "fail";
+  const time = new Date(r.ts).toLocaleTimeString();
+  li.textContent = `${time}  ${r.station}  ${r.serial}  ${r.result}  ${r.fail_code ?? ""}`;
+  const feed = document.getElementById("feed");
+  feed.prepend(li);
+  while (feed.children.length > FEED_MAX) feed.lastChild.remove();
+}
+
+// ===== WebSocket：收即時資料 =====
+// reconnect with exponential backoff + full jitter:
+// backoff 減少故障期間的無效重試，jitter 避免所有看板在伺服器恢復的瞬間同時湧上
+let retryDelay = 1000;
+const MAX_RETRY_DELAY = 30000;
+
+function connectWs() {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${proto}://${location.host}/ws/dashboard`);
+  const conn = document.getElementById("conn");
+
+  ws.onopen = () => {
+    retryDelay = 1000;                         // connected, reset the backoff
+    conn.className = "on"; conn.textContent = "即時連線中";
+  };
+  ws.onclose = () => {
+    conn.className = "off"; conn.textContent = "斷線，重新連線中…";
+    setTimeout(connectWs, Math.random() * retryDelay);   // full jitter: 0 ~ delay
+    retryDelay = Math.min(retryDelay * 2, MAX_RETRY_DELAY);
+  };
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    if (msg.type === "result") {
+      const r = msg.data;
+      const s = stations[r.station] ?? (stations[r.station] = { total: 0, passed: 0 });
+      s.total += 1;
+      if (r.result === "pass") s.passed += 1;
+      renderStations();
+      addFeed(r);
+    }
+  };
+}
+
+// ===== 啟動 =====
+loadStats().catch(console.error);             // 1. load for history
+connectWs();                                  // 2. connect ws for real time ingest
+setInterval(() => loadStats().catch(console.error), 30000);  // 3. calibration every 30s
+</script>
+</body>
+</html>
