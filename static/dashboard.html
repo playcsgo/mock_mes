@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Line Monitor — 產線看板</title>
 <style>
-  /*  Andon stype */
+  /*  Andon style */
   :root {
     --bg: #14171a; --panel: #1d2125; --line: #2c3238; --text: #d9dee3;
     --muted: #7d8791; --ok: #3ecf6e; --warn: #f2b33d; --bad: #ef5350;
@@ -44,6 +44,13 @@
           max-height: 70vh; overflow-y: auto; }
   #feed li { padding: 4px 8px; border-bottom: 1px solid var(--line); }
   #feed li.fail { color: var(--bad); }
+  /* alerts */
+  #alerts { list-style: none; margin: 0 0 24px; padding: 0; }
+  #alerts:empty { display: none; }
+  #alerts li { background: #3a1d1f; border-left: 4px solid var(--bad); color: #ffd6d6;
+               padding: 8px 12px; margin-bottom: 6px; font-family: var(--mono); font-size: 14px; }
+  #alerts li.new { animation: flash 1s 3; }
+  @keyframes flash { 50% { background: #6b2226; } }
 </style>
 </head>
 <body>
@@ -54,6 +61,7 @@
 
 <main>
   <div>
+    <ul id="alerts"></ul>
     <section>
       <h2>各站良率（最近 60 分鐘，即時更新）</h2>
       <div id="stations"></div>
@@ -95,6 +103,7 @@ async function loadStats() {
     query ($m: Int) {
       yieldByStation(sinceMinutes: $m) { station total passed }
       topFailures(sinceMinutes: $m, limit: 8) { station failCode count }
+      alerts(limit: 5) { station yieldRate threshold ts }
     }`, { m: WINDOW_MIN });
   stations = {};
   for (const s of data.yieldByStation) {
@@ -102,6 +111,10 @@ async function loadStats() {
   }
   renderStations();
   renderFailures(data.topFailures);
+  
+  // alerts   old -> new
+  document.getElementById("alerts").replaceChildren();
+  for (const a of data.alerts.reverse()) addAlert(a, false);
 }
 
 // ===== page =====
@@ -151,6 +164,19 @@ function addFeed(r) {
   while (feed.children.length > FEED_MAX) feed.lastChild.remove();
 }
 
+const ALERT_MAX = 5;
+function addAlert(a, isNew) {
+  const li = document.createElement("li");
+  if (isNew) li.className = "new"; 
+  const time = new Date(a.ts).toLocaleTimeString();
+  const rate = (a.yieldRate * 100).toFixed(1);
+  const th = (a.threshold * 100).toFixed(0);
+  li.textContent = `⚠ ${time}  ${a.station} 良率 ${rate}%，低於門檻 ${th}%`;
+  const box = document.getElementById("alerts");
+  box.prepend(li);
+  while (box.children.length > ALERT_MAX) box.lastChild.remove();
+}
+
 // ===== WebSocket：收即時資料 =====
 // reconnect with exponential backoff + full jitter:
 // backoff 減少故障期間的無效重試，jitter 避免所有看板在伺服器恢復的瞬間同時湧上
@@ -180,6 +206,10 @@ function connectWs() {
       if (r.result === "pass") s.passed += 1;
       renderStations();
       addFeed(r);
+    } else if (msg.type === "alert") {
+      const a = msg.data;
+      addAlert({ station: a.station, yieldRate: a.yield_rate,
+                 threshold: a.threshold, ts: a.ts }, true);
     }
   };
 }

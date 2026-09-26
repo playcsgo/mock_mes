@@ -52,6 +52,16 @@ class FailureCount:
     count: int
 
 
+@strawberry.type(description="alert for low yield rate")
+class Alert:
+    id: strawberry.ID
+    station: str
+    yield_rate: float
+    window: int
+    threshold: float
+    ts: datetime
+
+
 def minutes_ago(minutes: int | None) -> datetime | None:
     if minutes is None:
         return None
@@ -115,6 +125,11 @@ class Query:
 
         return [FailureCount(**r) for r in rows]
 
+    @strawberry.field(description="latest alerts, newest first")
+    async def alerts(self, info: Info, limit: int = 10) -> list[Alert]:
+        rows = await repository.latest_alerts(info.context["db"], limit)
+        return [Alert(**r) for r in rows]
+
 
 schema = strawberry.Schema(query=Query)
 
@@ -124,4 +139,4 @@ async def get_context(request: Request) -> dict:
     return {"db": request.app.state.db}
 
 
-graphal_router = GraphQLRouter(schema, context_getter=get_context)
+graphql_router = GraphQLRouter(schema, context_getter=get_context)

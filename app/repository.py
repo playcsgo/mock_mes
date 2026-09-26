@@ -1,14 +1,16 @@
 from pymongo import ASCENDING, DESCENDING
 from pymongo.asynchronous.database import AsyncDatabase
 
-from app.models import ResultIn
+from app.models import ResultIn, utc_now
 
 RESULTS = "results"
+ALERTS = "alerts"
 
 
 async def ensure_indexes(db: AsyncDatabase) -> None:
     (await db[RESULTS].create_index([("station", ASCENDING), ("ts", DESCENDING)]))
     (await db[RESULTS].create_index([("lot", ASCENDING), ("ts", DESCENDING)]))
+    await db[ALERTS].create_index([("ts", DESCENDING)])
 
 
 def to_public(doc: dict) -> dict:
@@ -118,3 +120,15 @@ async def top_failures(
 
     cursor = await db[RESULTS].aggregate(pipeline)
     return await cursor.to_list()
+
+
+async def insert_alert(db: AsyncDatabase, alert: dict) -> dict:
+    doc = {**alert, "ts": utc_now()}
+    await db[ALERTS].insert_one(doc)
+    return to_public(doc)
+
+
+async def latest_alerts(db: AsyncDatabase, limit: int = 10) -> list[dict]:
+    limit = max(1, min(limit, 100))
+    cursor = db[ALERTS].find().sort("ts", DESCENDING).limit(limit)
+    return [to_public(d) async for d in cursor]
