@@ -1,7 +1,7 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
-from app import repository
+from app import pipeline
 from app.models import ResultIn
 from app.ws_manager import manager
 
@@ -29,13 +29,7 @@ async def station_ws(websocket: WebSocket):
                 )
                 continue
 
-            doc = await repository.insert_result(db, item)
-            await manager.broadcast({"type": "result", "data": doc})
-
-            alert = monitor.add(item.station, item.result == "pass")
-            if alert:
-                alert_doc = await repository.insert_alert(db, alert)
-                await manager.broadcast({"type": "alert", "data": alert_doc})
+            doc = await pipeline.handle_result(db, monitor, item)
 
             # ack
             await websocket.send_json({"ok": True, "id": doc["id"]})
