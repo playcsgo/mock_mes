@@ -18,6 +18,7 @@ class FakeWs:
     def __init__(self, error: Exception) -> None:
         self.error = error
         self.app = SimpleNamespace(state=SimpleNamespace())
+        self.headers = {}
 
     async def accept(self) -> None:
         pass

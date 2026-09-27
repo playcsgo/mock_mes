@@ -1,10 +1,11 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app import demo, repository
 from app.alerts import YeildMonitor
-from app.config import settings
+from app.config import LOCALHOST_RE, settings
 from app.db import create_client
 from app.gql.schema import graphql_router
 from app.routes import dashboard, health, ingest, results
@@ -18,8 +19,11 @@ async def lifespan(app: FastAPI):
     await repository.ensure_indexes(app.state.db)
 
     added = await demo.backfill_if_sparse(app.state.db)
-    print(f"[demo] backfilled {added} docs at startup" if added
-          else "[demo] history is already there, nothing to backfill")
+    print(
+        f"[demo] backfilled {added} docs at startup"
+        if added
+        else "[demo] history is already there, nothing to backfill"
+    )
 
     app.state.monitor = YeildMonitor(
         window=settings.alert_window,
@@ -38,8 +42,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Line Monitor",
-    version="0.10.0",
+    version="1.0.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.origin_list,
+    allow_origin_regex=LOCALHOST_RE,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
 app.include_router(health.router)

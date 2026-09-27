@@ -4,6 +4,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
 from app import demo
+from app.config import is_allowed_origin
 from app.ws_manager import manager
 
 router = APIRouter()
@@ -17,6 +18,10 @@ async def dashboard_page():
 
 @router.websocket("/ws/dashboard")
 async def dashboard_ws(websocket: WebSocket):
+    if not is_allowed_origin(websocket.headers.get("origin")):
+        await websocket.close(code=1008)
+        return
+
     await manager.connect(websocket)
 
     demo.ensure_running(websocket.app)
