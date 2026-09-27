@@ -22,7 +22,7 @@ def test_no_alert_when_yeild_is_good():
 
 def test_alert_when_yield_is_drops():
     m = YeildMonitor(min_samples=20, threshold=0.9)
-    alert = feed(m, "ST-03", [True] * 15 + [False] * 5)  # 75%
+    alert = feed(m, "ST-03", [True] * 15 + [False] * 5)
 
     assert alert is not None
     assert alert["station"] == "ST-03"

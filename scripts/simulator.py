@@ -38,7 +38,6 @@ async def run_stations(station: str, args) -> None:
                         f"{record.get('fail_code') or '':<12} {mark}"
                     )
 
-                    # add interval to avoid all mock data come at once
                     await asyncio.sleep(args.interval * random.uniform(0.7, 1.3))
         except (OSError, ConnectionClosed):
             print(f"[{station}] disconnect, retry after 2 seconds")

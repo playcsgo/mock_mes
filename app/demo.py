@@ -19,26 +19,19 @@ BAD_RATE = 0.30
 FAIL_RATE = 0.01
 
 STATION_SPEED = {
-    "ST-01": 0.88,
-    "ST-02": 0.95,
-    "ST-03": 1.00,
+    "ST-01": 1.30,
+    "ST-02": 0.65,
+    "ST-03": 0.80,
     "ST-04": 0.82,
     "ST-05": 0.91,
 }
 
-# fill history
-BACKFILL_MINUTES = 60       # matches the dashboard window (last 60 minutes)
-BACKFILL_MIN_DOCS = 300     # backfill only when the window holds fewer than this
-BACKFILL_EVERY_S = 10
 
+BACKFILL_MINUTES = 60
+BACKFILL_MIN_DOCS = 300
+BACKFILL_EVERY_S = 10
 BACKFILL_BAD_RATE = 0.18
 
-# demo station config
-# Gap between rounds of 5 stations. One handle_result takes ~12ms on Atlas
-# and a full round only 60ms, so this is basically free to tune; the limit is
-# whether the live feed stays readable, not the database.
-#   0.5 -> ~9 rows/s  (the 50-row feed turns over in ~5.5s, still readable)
-#   0.3 -> ~15 rows/s (getting hard to follow)
 TICK_S = 0.5
 IDLE_GRACE_S = 60
 MAX_RUN_S = 20 * 60
@@ -82,12 +75,10 @@ def produces_this_round(station: str) -> bool:
 
 
 async def backfill_if_sparse(db) -> int:
-    since = utc_now() - timedelta(minutes=BACKFILL_MINUTES)
-    recent = await db[repository.RESULTS].count_documents({"ts": {"$gte": since}})
-
-    if recent >= BACKFILL_MIN_DOCS:
+    if await db[repository.RESULTS].count_documents({}) >= BACKFILL_MIN_DOCS:
         return 0
 
+    since = utc_now() - timedelta(minutes=BACKFILL_MINUTES)
     lot, docs, n = current_lot(), [], 0
     for step in range(BACKFILL_MINUTES * 60 // BACKFILL_EVERY_S):
         ts = since + timedelta(seconds=step * BACKFILL_EVERY_S)

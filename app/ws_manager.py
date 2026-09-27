@@ -1,5 +1,5 @@
 from fastapi import WebSocket, WebSocketException
-from fastapi.encoders import jsonable_encoder  ## for show datetime in JSON
+from fastapi.encoders import jsonable_encoder
 
 
 class ConnectionManager:

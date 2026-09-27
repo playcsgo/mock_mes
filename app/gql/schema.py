@@ -11,7 +11,6 @@ from strawberry.types import Info
 from app import repository
 
 
-# find GraphQL response format
 @strawberry.type(description="Result format")
 class Result:
     id: strawberry.ID
@@ -19,8 +18,8 @@ class Result:
     lot: str
     serial: str
     result: str
-    fail_code: str | None  # response reply as camelCase: failCode
-    measurements: JSON  # measurements could has different format, so JSON
+    fail_code: str | None
+    measurements: JSON
     ts: datetime
 
     @classmethod
@@ -69,7 +68,6 @@ def minutes_ago(minutes: int | None) -> datetime | None:
     return datetime.now(timezone.utc) - timedelta(minutes=minutes)
 
 
-# Query Entry
 @strawberry.type
 class Query:
     @strawberry.field(description="query format")
@@ -134,7 +132,6 @@ class Query:
 schema = strawberry.Schema(query=Query)
 
 
-# every request use its own context. avoid Global issue
 async def get_context(request: Request) -> dict:
     return {"db": request.app.state.db}
 

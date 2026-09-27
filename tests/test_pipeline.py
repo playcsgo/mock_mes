@@ -42,7 +42,7 @@ def test_alert_is_stored_when_yield_drops():
 
     assert len(db[repository.RESULTS].docs) == 20
     assert len(db[repository.ALERTS].docs) == 1
-    assert db[repository.ALERTS].docs[0]["sation"] == "ST-01"
+    assert db[repository.ALERTS].docs[0]["station"] == "ST-01"
 
 
 def test_no_alert_before_min_samples():

@@ -28,9 +28,8 @@ def test_backfill_fills_one_hour_and_degrades_the_bad_station():
     db = FakeDB()
     added = asyncio.run(demo.backfill_if_sparse(db))
 
-    # Each station has its own throughput, so this is not a full 1800
     full = demo.BACKFILL_MINUTES * 60 // demo.BACKFILL_EVERY_S * len(demo.STATIONS)
-    assert full * 0.80 < added < full        # measured around 1640 / 1800
+    assert full * 0.80 < added < full
 
     docs = db[repository.RESULTS].docs
     assert len(docs) == added
@@ -51,13 +50,13 @@ def test_stations_do_not_all_produce_the_same_amount():
     asyncio.run(demo.backfill_if_sparse(db))
 
     counts = Counter(d["station"] for d in db[repository.RESULTS].docs)
-    assert len(set(counts.values())) > 1              # not all identical
+    assert len(set(counts.values())) > 1
 
     spread = (max(counts.values()) - min(counts.values())) / max(counts.values())
-    assert spread > 0.05                              # visible gap (measured ~19%)
+    assert spread > 0.05
 
-    # The bad station retests its failures, so it should have the most rows
-    assert counts.most_common(1)[0][0] == demo.BAD_STATION
+    fastest = max(demo.STATION_SPEED, key=demo.STATION_SPEED.get)
+    assert counts.most_common(1)[0][0] == fastest
 
 
 def test_backfill_skipped_when_window_already_has_data():

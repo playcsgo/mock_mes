@@ -1,11 +1,12 @@
 from pymongo import ASCENDING, DESCENDING
 from pymongo.asynchronous.database import AsyncDatabase
+from pymongo.errors import OperationFailure
 
 from app.models import ResultIn, utc_now
 
 RESULTS = "results"
 ALERTS = "alerts"
-DATA_TTL_S = 4 * 60 * 60
+DATA_TTL_S = 7 * 24 * 60 * 60
 
 
 async def ensure_indexes(db: AsyncDatabase) -> None:
@@ -13,9 +14,33 @@ async def ensure_indexes(db: AsyncDatabase) -> None:
     (await db[RESULTS].create_index([("lot", ASCENDING), ("ts", DESCENDING)]))
     await db[ALERTS].create_index([("ts", DESCENDING)])
 
-    # set TTL
-    await db[RESULTS].create_index("ts", expireAfterSeconds=DATA_TTL_S)
-    await db[ALERTS].create_index("ts", expireAfterSeconds=DATA_TTL_S)
+    await ensure_ttl_index(db, RESULTS)
+    await ensure_ttl_index(db, ALERTS)
+
+
+INDEX_OPTIONS_CONFLICT = 85
+
+
+async def ensure_ttl_index(db: AsyncDatabase, collection: str) -> None:
+    """Create the TTL index on ts; if one exists with a different duration,
+    change it with collMod instead.
+
+    create_index refuses an index that already exists under the same name with
+    different options (IndexOptionsConflict), so any change to DATA_TTL_S would
+    otherwise crash startup on an existing database. Changing the duration is a
+    collMod, not a rebuild -- a rebuild leaves a window with no index at all.
+    """
+    try:
+        await db[collection].create_index("ts", expireAfterSeconds=DATA_TTL_S)
+    except OperationFailure as e:
+        if e.code != INDEX_OPTIONS_CONFLICT:
+            raise
+        await db.command(
+            {
+                "collMod": collection,
+                "index": {"keyPattern": {"ts": 1}, "expireAfterSeconds": DATA_TTL_S},
+            }
+        )
 
 
 def to_public(doc: dict) -> dict:
@@ -30,10 +55,7 @@ async def insert_result(db: AsyncDatabase, item: ResultIn) -> dict:
     return to_public(doc)
 
 
-# async def latest_results(db: AsyncDatabase, limit: int = 10) -> list[dict]:
-#     cursor = db[RESULTS].find().sort("ts", DESCENDING).limit(limit)
 
-#     return [to_public(d) async for d in cursor]
 
 
 def build_filter(station=None, lot=None, result=None, since=None, until=None) -> dict:
@@ -49,9 +71,9 @@ def build_filter(station=None, lot=None, result=None, since=None, until=None) ->
     if since or until:
         q["ts"] = {}
         if since:
-            q["ts"]["$gte"] = since  # #get: greater than
+            q["ts"]["$gte"] = since
         if until:
-            q["ts"]["$lt"] = until  # #lt: less than
+            q["ts"]["$lt"] = until
     return q
 
 
@@ -70,9 +92,7 @@ async def latest_results(db: AsyncDatabase, limit: int = 10) -> list[dict]:
 
 async def yield_by_station(db: AsyncDatabase, lot=None, since=None) -> list[dict]:
     pipeline = [
-        # 1 match for filter
         {"$match": build_filter(lot=lot, since=since)},
-        # 2 group for calculation
         {
             "$group": {
                 "_id": "$station",
@@ -80,7 +100,6 @@ async def yield_by_station(db: AsyncDatabase, lot=None, since=None) -> list[dict
                 "passed": {"$sum": {"$cond": [{"$eq": ["$result", "pass"]}, 1, 0]}},
             }
         },
-        # 3 format of request
         {
             "$project": {
                 "_id": 0,
@@ -90,7 +109,6 @@ async def yield_by_station(db: AsyncDatabase, lot=None, since=None) -> list[dict
                 "yield_rate": {"$divide": ["$passed", "$total"]},
             }
         },
-        # 4 sort
         {"$sort": {"station": 1}},
     ]
 

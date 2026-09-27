@@ -15,7 +15,6 @@ GOOD = {
     "measurements": {"v_out": 5.01},
 }
 
-## test for miss fail code, should return error.
 BAD = {
     "station": "ST-01",
     "lot": "LOT-A",

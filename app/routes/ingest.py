@@ -31,7 +31,6 @@ async def station_ws(websocket: WebSocket):
 
             doc = await pipeline.handle_result(db, monitor, item)
 
-            # ack
             await websocket.send_json({"ok": True, "id": doc["id"]})
     except WebSocketDisconnect:
         pass

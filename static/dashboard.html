@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Line Monitor — 產線看板</title>
 <style>
-  /*  Andon style */
   :root {
     --bg: #14171a; --panel: #1d2125; --line: #2c3238; --text: #d9dee3;
     --muted: #7d8791; --ok: #3ecf6e; --warn: #f2b33d; --bad: #ef5350;
@@ -24,7 +23,6 @@
   @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
   h2 { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--muted); }
 
-  /* station session */
   #stations { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
   .tile { background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--muted);
           padding: 12px 14px; }
@@ -55,7 +53,6 @@
                  animation: slide 1.4s ease-in-out infinite; }
   @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }
   #wake .sec { font-family: var(--mono); font-size: 13px; color: var(--muted); }
-  /* alerts */
   #alerts { list-style: none; margin: 0 0 24px; padding: 0;
             max-height: 132px; overflow-y: auto; }
   #alerts:empty { display: none; }
@@ -82,11 +79,11 @@
   <div>
     <ul id="alerts"></ul>
     <section>
-      <h2>各站良率（最近 60 分鐘，即時更新）</h2>
+      <h2>各站良率（最近一週，即時更新）</h2>
       <div id="stations"></div>
     </section>
     <section>
-      <h2>最常見失敗原因（每 30 秒更新）</h2>
+      <h2>最常見失敗原因（最近一週，每 30 秒更新）</h2>
       <table>
         <thead><tr><th>站</th><th>失敗代碼</th><th>次數</th></tr></thead>
         <tbody id="failures"></tbody>
@@ -100,22 +97,15 @@
 </main>
 
 <script>
-// ===== collection data =====
 let stations = {};
 const FEED_MAX = 50;
-const WINDOW_MIN = 60;     // how many minutes the dashboard covers
 
-// ===== where the API lives =====
-// Local: FastAPI serves this page itself (same origin).
-// Deployed: page on Cloudflare Pages, API on Render (cross origin).
-// Detect it so one file works in both places -- no second copy to drift.
 const IS_LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname);
 const API_BASE = IS_LOCAL ? "" : "https://TODO-換成你的-render-網址.onrender.com";
 const WS_BASE = API_BASE
   ? API_BASE.replace(/^http/, "ws")
   : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
 
-// ===== Get data =====
 async function gql(query, variables = {}) {
   const res = await fetch(`${API_BASE}/graphql`, {
     method: "POST",
@@ -129,11 +119,11 @@ async function gql(query, variables = {}) {
 
 async function loadStats() {
   const data = await gql(`
-    query ($m: Int) {
-      yieldByStation(sinceMinutes: $m) { station total passed }
-      topFailures(sinceMinutes: $m, limit: 8) { station failCode count }
+    query {
+      yieldByStation { station total passed }
+      topFailures(limit: 8) { station failCode count }
       alerts(limit: 5) { station yieldRate threshold ts }
-    }`, { m: WINDOW_MIN });
+    }`);
   stations = {};
   for (const s of data.yieldByStation) {
     stations[s.station] = { total: s.total, passed: s.passed };
@@ -141,13 +131,11 @@ async function loadStats() {
   renderStations();
   renderFailures(data.topFailures);
   
-  // alerts   old -> new
   document.getElementById("alerts").replaceChildren();
   for (const a of data.alerts.reverse()) addAlert(a, false);
 
 }
 
-// ===== page =====
 function level(rate) {
   if (rate >= 0.95) return "ok";
   if (rate >= 0.90) return "warn";
@@ -207,10 +195,6 @@ function addAlert(a, isNew) {
   while (box.children.length > ALERT_MAX) box.lastChild.remove();
 }
 
-// ===== WebSocket: live data =====
-// reconnect with exponential backoff + full jitter:
-// backoff cuts useless retries during an outage; jitter stops every board
-// from hitting the server at the same instant when it comes back
 let retryDelay = 1000;
 const MAX_RETRY_DELAY = 30000;
 
@@ -219,12 +203,12 @@ function connectWs() {
   const conn = document.getElementById("conn");
 
   ws.onopen = () => {
-    retryDelay = 1000;                         // connected, reset the backoff
+    retryDelay = 1000;
     conn.className = "on"; conn.textContent = "即時連線中";
   };
   ws.onclose = () => {
     conn.className = "off"; conn.textContent = "斷線，重新連線中…";
-    setTimeout(connectWs, Math.random() * retryDelay);   // full jitter: 0 ~ delay
+    setTimeout(connectWs, Math.random() * retryDelay);
     retryDelay = Math.min(retryDelay * 2, MAX_RETRY_DELAY);
   };
   ws.onmessage = (event) => {
@@ -244,16 +228,12 @@ function connectWs() {
   };
 }
 
-// ===== startup =====
 async function wakeUp() {
-  // The server sleeps on the free plan. Keep this overlay up until /health
-  // answers, so the first visitor sees "waking up" instead of a blank board.
   const box = document.getElementById("wake");
   const secEl = document.getElementById("wake-sec");
   const t0 = Date.now();
   while (true) {
     try {
-      // AbortController: a sleeping server may hang the request; retry after 5s
       const ctl = new AbortController();
       const timer = setTimeout(() => ctl.abort(), 5000);
       const res = await fetch(`${API_BASE}/health`, { signal: ctl.signal });
@@ -266,9 +246,9 @@ async function wakeUp() {
 }
 
 wakeUp().then(() => {
-  loadStats().catch(console.error);           // 1. history first
-  connectWs();                                // 2. then the live stream
-  setInterval(() => loadStats().catch(console.error), 30000);  // 3. reconcile every 30s
+  loadStats().catch(console.error);
+  connectWs();
+  setInterval(() => loadStats().catch(console.error), 30000);
 });
 </script>
 </body>
