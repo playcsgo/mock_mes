@@ -44,8 +44,20 @@
           max-height: 70vh; overflow-y: auto; }
   #feed li { padding: 4px 8px; border-bottom: 1px solid var(--line); }
   #feed li.fail { color: var(--bad); }
+
+  #wake { position: fixed; inset: 0; z-index: 9; background: var(--bg);
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          gap: 14px; text-align: center; padding: 24px; }
+  #wake h2 { margin: 0; font-size: 18px; color: var(--text); }
+  #wake p { margin: 0; color: var(--muted); max-width: 420px; }
+  #wake .bar { width: min(320px, 80vw); height: 4px; background: var(--line); overflow: hidden; }
+  #wake .bar i { display: block; height: 100%; width: 40%; background: var(--ok);
+                 animation: slide 1.4s ease-in-out infinite; }
+  @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }
+  #wake .sec { font-family: var(--mono); font-size: 13px; color: var(--muted); }
   /* alerts */
-  #alerts { list-style: none; margin: 0 0 24px; padding: 0; }
+  #alerts { list-style: none; margin: 0 0 24px; padding: 0;
+            max-height: 132px; overflow-y: auto; }
   #alerts:empty { display: none; }
   #alerts li { background: #3a1d1f; border-left: 4px solid var(--bad); color: #ffd6d6;
                padding: 8px 12px; margin-bottom: 6px; font-family: var(--mono); font-size: 14px; }
@@ -54,6 +66,13 @@
 </style>
 </head>
 <body>
+<div id="wake">
+  <h2 id="wake-msg">正在喚醒伺服器…</h2>
+  <div class="bar"><i></i></div>
+  <p>這個 demo 跑在免費方案上，沒人使用時會自動休眠以節省資源。
+     第一次開啟大約需要一分鐘。</p>
+  <div class="sec">已等待 <span id="wake-sec">0</span> 秒</div>
+</div>
 <header>
   <h1>產線測試即時看板</h1>
   <span id="conn" class="off">未連線</span>
@@ -83,12 +102,22 @@
 <script>
 // ===== collection data =====
 let stations = {};
-const FEED_MAX = 50;     
-const WINDOW_MIN = 60;
+const FEED_MAX = 50;
+const WINDOW_MIN = 60;     // how many minutes the dashboard covers
+
+// ===== where the API lives =====
+// Local: FastAPI serves this page itself (same origin).
+// Deployed: page on Cloudflare Pages, API on Render (cross origin).
+// Detect it so one file works in both places -- no second copy to drift.
+const IS_LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname);
+const API_BASE = IS_LOCAL ? "" : "https://TODO-換成你的-render-網址.onrender.com";
+const WS_BASE = API_BASE
+  ? API_BASE.replace(/^http/, "ws")
+  : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
 
 // ===== Get data =====
 async function gql(query, variables = {}) {
-  const res = await fetch("/graphql", {
+  const res = await fetch(`${API_BASE}/graphql`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, variables }),
@@ -115,6 +144,7 @@ async function loadStats() {
   // alerts   old -> new
   document.getElementById("alerts").replaceChildren();
   for (const a of data.alerts.reverse()) addAlert(a, false);
+
 }
 
 // ===== page =====
@@ -177,15 +207,15 @@ function addAlert(a, isNew) {
   while (box.children.length > ALERT_MAX) box.lastChild.remove();
 }
 
-// ===== WebSocket：收即時資料 =====
+// ===== WebSocket: live data =====
 // reconnect with exponential backoff + full jitter:
-// backoff 減少故障期間的無效重試，jitter 避免所有看板在伺服器恢復的瞬間同時湧上
+// backoff cuts useless retries during an outage; jitter stops every board
+// from hitting the server at the same instant when it comes back
 let retryDelay = 1000;
 const MAX_RETRY_DELAY = 30000;
 
 function connectWs() {
-  const proto = location.protocol === "https:" ? "wss" : "ws";
-  const ws = new WebSocket(`${proto}://${location.host}/ws/dashboard`);
+  const ws = new WebSocket(`${WS_BASE}/ws/dashboard`);
   const conn = document.getElementById("conn");
 
   ws.onopen = () => {
@@ -214,10 +244,32 @@ function connectWs() {
   };
 }
 
-// ===== 啟動 =====
-loadStats().catch(console.error);             // 1. load for history
-connectWs();                                  // 2. connect ws for real time ingest
-setInterval(() => loadStats().catch(console.error), 30000);  // 3. calibration every 30s
+// ===== startup =====
+async function wakeUp() {
+  // The server sleeps on the free plan. Keep this overlay up until /health
+  // answers, so the first visitor sees "waking up" instead of a blank board.
+  const box = document.getElementById("wake");
+  const secEl = document.getElementById("wake-sec");
+  const t0 = Date.now();
+  while (true) {
+    try {
+      // AbortController: a sleeping server may hang the request; retry after 5s
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 5000);
+      const res = await fetch(`${API_BASE}/health`, { signal: ctl.signal });
+      clearTimeout(timer);
+      if (res.ok) { box.remove(); return; }
+    } catch { /* not awake yet, keep waiting */ }
+    secEl.textContent = Math.round((Date.now() - t0) / 1000);
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+}
+
+wakeUp().then(() => {
+  loadStats().catch(console.error);           // 1. history first
+  connectWs();                                // 2. then the live stream
+  setInterval(() => loadStats().catch(console.error), 30000);  // 3. reconcile every 30s
+});
 </script>
 </body>
 </html>

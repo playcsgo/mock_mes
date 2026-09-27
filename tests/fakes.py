@@ -14,10 +14,16 @@ class FakeCollection:
         for doc in docs:
             await self.insert_one(doc)
 
-    async def count_documents(self, _filter: dict) -> int:
-        return len(self.docs)
+    async def count_documents(self, filter: dict | None = None) -> int:
+        # Equality conditions only ({"station": "ST-01"}); enough for the tests
+        if not filter:
+            return len(self.docs)
+        return sum(
+            all(d.get(k) == v for k, v in filter.items() if not isinstance(v, dict))
+            for d in self.docs
+        )
 
-    async def create_idnex(self, keys, **options) -> str:
+    async def create_index(self, keys, **options) -> str:
         self.indexes.append((keys, options))
         return "fake_index"
 

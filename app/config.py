@@ -8,10 +8,10 @@ class Settings(BaseSettings):
     mongo_db_name: str = "line_monitor"
 
     # alert
-    alert_window: int = 50  # 每站看最近 50 筆
-    alert_min_samples: int = 20  # 少於 20 筆不判斷，樣本太少不準
-    alert_threshold: float = 0.9  # 良率低於 90% 就警報
-    alert_cooldown_s: float = 60  # 同一站 60 秒內不重複警報
+    alert_window: int = 50  # look at the last 50 results per station
+    alert_min_samples: int = 20  # below this, too few samples to judge
+    alert_threshold: float = 0.9  # alert when yield drops under 90%
+    alert_cooldown_s: float = 60  # do not re-alert the same station within 60s
 
 
 settings = Settings()

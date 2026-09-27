@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
+from app import demo
 from app.ws_manager import manager
 
 router = APIRouter()
@@ -18,11 +19,12 @@ async def dashboard_page():
 async def dashboard_ws(websocket: WebSocket):
     await manager.connect(websocket)
 
+    demo.ensure_running(websocket.app)
+
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-        pass
     finally:
         manager.disconnect(websocket)
