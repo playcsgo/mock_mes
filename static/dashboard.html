@@ -1,9 +1,10 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Line Monitor — 產線看板</title>
+<meta name="robots" content="noindex">
+<title>Line Monitor</title>
 <style>
   :root {
     --bg: #14171a; --panel: #1d2125; --line: #2c3238; --text: #d9dee3;
@@ -17,6 +18,11 @@
            border-bottom: 1px solid var(--line); }
   header h1 { margin: 0; font-size: 20px; font-weight: 600; }
   #conn { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+  #lang { margin-left: auto; font-size: 13px; color: var(--muted); text-decoration: none;
+          border: 1px solid var(--line); padding: 4px 10px;
+          white-space: nowrap; flex-shrink: 0; }
+  #lang:hover { color: var(--text); border-color: var(--muted); }
+  #lang:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
   #conn.on::before  { content: "● "; color: var(--ok); }
   #conn.off::before { content: "● "; color: var(--bad); }
   main { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; padding: 20px 24px; }
@@ -64,44 +70,103 @@
 </head>
 <body>
 <div id="wake">
-  <h2 id="wake-msg">正在喚醒伺服器…</h2>
+  <h2 data-t="waking"></h2>
   <div class="bar"><i></i></div>
-  <p>這個 demo 跑在免費方案上，沒人使用時會自動休眠以節省資源。
-     第一次開啟大約需要一分鐘。</p>
-  <div class="sec">已等待 <span id="wake-sec">0</span> 秒</div>
+  <p data-t="wakeNote"></p>
+  <div class="sec"><span data-t="waited"></span> <span id="wake-sec">0</span> <span data-t="seconds"></span></div>
 </div>
 <header>
-  <h1>產線測試即時看板</h1>
-  <span id="conn" class="off">未連線</span>
+  <h1 data-t="title"></h1>
+  <span id="conn" class="off" data-t="offline"></span>
+  <a id="lang"></a>
 </header>
 
 <main>
   <div>
     <ul id="alerts"></ul>
     <section>
-      <h2>各站良率（最近一週，即時更新）</h2>
+      <h2 data-t="yieldHead"></h2>
       <div id="stations"></div>
     </section>
     <section>
-      <h2>最常見失敗原因（最近一週，每 30 秒更新）</h2>
+      <h2 data-t="failHead"></h2>
       <table>
-        <thead><tr><th>站</th><th>失敗代碼</th><th>次數</th></tr></thead>
+        <thead><tr><th data-t="colStation"></th><th data-t="colCode"></th><th data-t="colCount"></th></tr></thead>
         <tbody id="failures"></tbody>
       </table>
     </section>
   </div>
   <section>
-    <h2>即時測試紀錄</h2>
+    <h2 data-t="feedHead"></h2>
     <ul id="feed"></ul>
   </section>
 </main>
 
 <script>
+const LANG = location.pathname.endsWith("/en") ? "en" : "zh";
+const LOCALE = LANG === "en" ? "en-US" : "zh-TW";
+
+const TEXT = {
+  zh: {
+    pageTitle: "Line Monitor — 產線看板",
+    title: "產線測試即時看板",
+    online: "即時連線中",
+    offline: "未連線",
+    reconnecting: "斷線，重新連線中…",
+    yieldHead: "各站良率（最近一週，即時更新）",
+    failHead: "最常見失敗原因（最近一週，每 30 秒更新）",
+    feedHead: "即時測試紀錄",
+    colStation: "站",
+    colCode: "失敗代碼",
+    colCount: "次數",
+    waking: "正在喚醒伺服器…",
+    wakeNote: "這個 demo 跑在免費方案上，沒人使用時會自動休眠以節省資源。第一次開啟大約需要一分鐘。",
+    waited: "已等待",
+    seconds: "秒",
+    other: "English",
+    alert: (time, station, rate, th) =>
+      `⚠ ${time}  ${station} 良率 ${rate}%，低於門檻 ${th}%`,
+  },
+  en: {
+    pageTitle: "Line Monitor — Production Dashboard",
+    title: "Production Test Monitor",
+    online: "Live",
+    offline: "Not connected",
+    reconnecting: "Disconnected, reconnecting…",
+    yieldHead: "Yield by station (last 7 days, live)",
+    failHead: "Top failure codes (last 7 days, refreshed every 30s)",
+    feedHead: "Live test results",
+    colStation: "Station",
+    colCode: "Fail code",
+    colCount: "Count",
+    waking: "Waking the server…",
+    wakeNote: "This demo runs on a free plan and sleeps when nobody is using it. The first visit takes about a minute.",
+    waited: "Waited",
+    seconds: "s",
+    other: "中文",
+    alert: (time, station, rate, th) =>
+      `⚠ ${time}  ${station} yield ${rate}%, below the ${th}% threshold`,
+  },
+};
+
+const T = TEXT[LANG];
+
+document.documentElement.lang = LANG === "en" ? "en" : "zh-Hant";
+document.title = T.pageTitle;
+for (const el of document.querySelectorAll("[data-t]")) {
+  el.textContent = T[el.dataset.t];
+}
+
+const langLink = document.getElementById("lang");
+langLink.textContent = T.other;
+langLink.href = LANG === "en" ? "cn" : "en";
+langLink.hreflang = LANG === "en" ? "zh-Hant" : "en";
+
 let stations = {};
 const FEED_MAX = 50;
 
 const IS_LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname);
-const API_BASE = IS_LOCAL ? "" : "https://TODO-換成你的-render-網址.onrender.com";
+const API_BASE = IS_LOCAL ? "" : "https://TODO-your-service.onrender.com";
 const WS_BASE = API_BASE
   ? API_BASE.replace(/^http/, "ws")
   : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
@@ -175,7 +240,7 @@ function renderFailures(rows) {
 function addFeed(r) {
   const li = document.createElement("li");
   if (r.result === "fail") li.className = "fail";
-  const time = new Date(r.ts).toLocaleTimeString();
+  const time = new Date(r.ts).toLocaleTimeString(LOCALE);
   li.textContent = `${time}  ${r.station}  ${r.serial}  ${r.result}  ${r.fail_code ?? ""}`;
   const feed = document.getElementById("feed");
   feed.prepend(li);
@@ -186,10 +251,10 @@ const ALERT_MAX = 5;
 function addAlert(a, isNew) {
   const li = document.createElement("li");
   if (isNew) li.className = "new"; 
-  const time = new Date(a.ts).toLocaleTimeString();
+  const time = new Date(a.ts).toLocaleTimeString(LOCALE);
   const rate = (a.yieldRate * 100).toFixed(1);
   const th = (a.threshold * 100).toFixed(0);
-  li.textContent = `⚠ ${time}  ${a.station} 良率 ${rate}%，低於門檻 ${th}%`;
+  li.textContent = T.alert(time, a.station, rate, th);
   const box = document.getElementById("alerts");
   box.prepend(li);
   while (box.children.length > ALERT_MAX) box.lastChild.remove();
@@ -204,10 +269,10 @@ function connectWs() {
 
   ws.onopen = () => {
     retryDelay = 1000;
-    conn.className = "on"; conn.textContent = "即時連線中";
+    conn.className = "on"; conn.textContent = T.online;
   };
   ws.onclose = () => {
-    conn.className = "off"; conn.textContent = "斷線，重新連線中…";
+    conn.className = "off"; conn.textContent = T.reconnecting;
     setTimeout(connectWs, Math.random() * retryDelay);
     retryDelay = Math.min(retryDelay * 2, MAX_RETRY_DELAY);
   };

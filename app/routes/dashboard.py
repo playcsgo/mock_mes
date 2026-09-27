@@ -16,6 +16,11 @@ async def dashboard_page():
     return FileResponse(DASHBOARD_HTML)
 
 
+@router.get("/ems_demo/{lang}", include_in_schema=False)
+async def dashboard_page_i18n(lang: str):
+    return FileResponse(DASHBOARD_HTML)
+
+
 @router.websocket("/ws/dashboard")
 async def dashboard_ws(websocket: WebSocket):
     if not is_allowed_origin(websocket.headers.get("origin")):
@@ -30,6 +35,6 @@ async def dashboard_ws(websocket: WebSocket):
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        pass
     finally:
         manager.disconnect(websocket)
