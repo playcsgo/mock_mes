@@ -1,3 +1,4 @@
+import secrets
 from urllib.parse import urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -14,6 +15,8 @@ class Settings(BaseSettings):
     alert_threshold: float = 0.9
     alert_cooldown_s: float = 60
 
+    ingest_token: str = ""
+
     allowed_origins: str = (
         "https://agilenpi.com,"
         "https://www.agilenpi.com,"
@@ -26,6 +29,13 @@ class Settings(BaseSettings):
 
 
 LOCALHOST_RE = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
+
+
+def ingest_allowed(token: str | None) -> bool:
+    """Fail closed: no INGEST_TOKEN configured means nobody may write."""
+    if not settings.ingest_token:
+        return False
+    return bool(token) and secrets.compare_digest(token, settings.ingest_token)
 
 
 def is_allowed_origin(origin: str | None) -> bool:

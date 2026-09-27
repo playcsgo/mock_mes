@@ -2,14 +2,18 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
 from app import pipeline
+from app.config import ingest_allowed
 from app.models import ResultIn
-from app.ws_manager import manager
 
 router = APIRouter()
 
 
 @router.websocket("/ws/station")
 async def station_ws(websocket: WebSocket):
+    if not ingest_allowed(websocket.query_params.get("token")):
+        await websocket.close(code=1008)
+        return
+
     await websocket.accept()
     db = websocket.app.state.db
     monitor = websocket.app.state.monitor

@@ -12,6 +12,7 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from app.config import settings
 from app.demo import make_record
 
 
@@ -46,7 +47,10 @@ async def run_stations(station: str, args) -> None:
 
 async def main() -> None:
     p = argparse.ArgumentParser(description=" mock MES")
-    p.add_argument("--url", default="ws://localhost:8000/ws/station")
+    p.add_argument(
+        "--url",
+        default=f"ws://localhost:8000/ws/station?token={settings.ingest_token}",
+    )
     p.add_argument("--stations", type=int, default=3, help="amount of mock stations")
     p.add_argument(
         "--interval", type=float, default=1.0, help="data frequency of each station"
