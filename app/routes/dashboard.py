@@ -23,3 +23,6 @@ async def dashboard_ws(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+        pass
+    finally:
+        manager.disconnect(websocket)
