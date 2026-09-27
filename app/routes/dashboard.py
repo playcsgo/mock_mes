@@ -16,7 +16,7 @@ async def dashboard_page():
     return FileResponse(DASHBOARD_HTML)
 
 
-@router.get("/ems_demo/{lang}", include_in_schema=False)
+@router.get("/mes_demo/{lang}", include_in_schema=False)
 async def dashboard_page_i18n(lang: str):
     return FileResponse(DASHBOARD_HTML)
 

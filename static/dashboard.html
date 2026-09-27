@@ -166,7 +166,7 @@ let stations = {};
 const FEED_MAX = 50;
 
 const IS_LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname);
-const API_BASE = IS_LOCAL ? "" : "https://mock-ems.onrender.com";
+const API_BASE = IS_LOCAL ? "" : "https://mock-mes.onrender.com";
 const WS_BASE = API_BASE
   ? API_BASE.replace(/^http/, "ws")
   : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
