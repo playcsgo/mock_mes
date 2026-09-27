@@ -5,12 +5,17 @@ from app.models import ResultIn, utc_now
 
 RESULTS = "results"
 ALERTS = "alerts"
+DATA_TTL_S = 4 * 60 * 60
 
 
 async def ensure_indexes(db: AsyncDatabase) -> None:
     (await db[RESULTS].create_index([("station", ASCENDING), ("ts", DESCENDING)]))
     (await db[RESULTS].create_index([("lot", ASCENDING), ("ts", DESCENDING)]))
     await db[ALERTS].create_index([("ts", DESCENDING)])
+
+    # set TTL
+    await db[RESULTS].create_index("ts", expireAfterSeconds=DATA_TTL_S)
+    await db[ALERTS].create_index("ts", expireAfterSeconds=DATA_TTL_S)
 
 
 def to_public(doc: dict) -> dict:
