@@ -9,14 +9,17 @@ class YieldMonitor:
         min_samples: int = 20,
         threshold: float = 0.90,
         cooldown_s: float = 60,
+        incident_ttl_s: float | None = None,
     ) -> None:
         self.window = window
         self.min_samples = min_samples
         self.threshold = threshold
         self.cooldown_s = cooldown_s
+        self.incident_ttl_s = incident_ttl_s
         self._history: dict[str, deque[bool]] = {}
         self._last_alert: dict[str, float] = {}
-        self._in_alarm: set[str] = set()
+        # station -> when its current incident started; leaving = recovered
+        self._in_alarm: dict[str, float] = {}
 
     def add(self, station: str, passed: bool, now: float | None = None) -> dict | None:
         now = time.monotonic() if now is None else now
@@ -28,7 +31,7 @@ class YieldMonitor:
 
         rate = sum(history) / len(history)
         if rate >= self.threshold:
-            self._in_alarm.discard(station)
+            self._in_alarm.pop(station, None)
             return None
 
         last = self._last_alert.get(station)
@@ -36,8 +39,16 @@ class YieldMonitor:
             return None
 
         self._last_alert[station] = now
-        new_incident = station not in self._in_alarm
-        self._in_alarm.add(station)
+        # new_incident: normal -> abnormal. Re-alerts after cooldown are False,
+        # so LINE can push once per incident instead of once per cooldown.
+        # With incident_ttl_s, an incident that has lasted that long counts as a
+        # new one, so a station stuck below threshold gets pushed again.
+        started = self._in_alarm.get(station)
+        new_incident = started is None or (
+            self.incident_ttl_s is not None and now - started >= self.incident_ttl_s
+        )
+        if new_incident:
+            self._in_alarm[station] = now
         return {
             "station": station,
             "yield_rate": round(rate, 3),

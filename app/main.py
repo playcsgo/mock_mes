@@ -32,6 +32,7 @@ async def lifespan(app: FastAPI):
         min_samples=settings.alert_min_samples,
         threshold=settings.alert_threshold,
         cooldown_s=settings.alert_cooldown_s,
+        incident_ttl_s=settings.alert_incident_ttl_s or None,
     )
 
     app.state.line_client = None

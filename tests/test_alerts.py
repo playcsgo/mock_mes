@@ -69,3 +69,22 @@ def test_alert_after_recovery_is_a_new_incident_again():
     feed(m, "ST-03", [True] * 20, now=100)
 
     assert feed(m, "ST-03", [False] * 3, now=200)["new_incident"] is True
+
+
+def test_incident_older_than_ttl_counts_as_new_again():
+    m = YieldMonitor(min_samples=20, threshold=0.9, cooldown_s=60, incident_ttl_s=180)
+    feed(m, "ST-03", [False] * 20, now=0)
+
+    assert m.add("ST-03", False, now=61)["new_incident"] is False
+    assert m.add("ST-03", False, now=122)["new_incident"] is False
+    assert m.add("ST-03", False, now=183)["new_incident"] is True
+    # the TTL restarts with the new incident
+    assert m.add("ST-03", False, now=244)["new_incident"] is False
+
+
+def test_ttl_equal_to_cooldown_makes_every_alert_a_new_incident():
+    m = YieldMonitor(min_samples=20, threshold=0.9, cooldown_s=60, incident_ttl_s=60)
+    feed(m, "ST-03", [False] * 20, now=0)
+
+    assert m.add("ST-03", False, now=61)["new_incident"] is True
+    assert m.add("ST-03", False, now=122)["new_incident"] is True

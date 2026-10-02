@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     alert_min_samples: int = 20
     alert_threshold: float = 0.9
     alert_cooldown_s: float = 60
+    alert_incident_ttl_s: float = 60  # 0 = an incident never expires
 
     ingest_token: str = ""
 
