@@ -45,6 +45,7 @@ async def callback(request: Request):
     if not valid_signature(
         body, request.headers.get("X-Line-Signature"), settings.line_channel_secret
     ):
+        print("[line] webhook rejected: bad or missing signature (check LINE_CHANNEL_SECRET)")
         raise HTTPException(status_code=400, detail="invalid signature")
 
     db = request.app.state.db

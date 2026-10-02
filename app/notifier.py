@@ -125,6 +125,7 @@ class LineNotifier:
     async def send(self, alert: dict) -> None:
         to = await self.get_recipients()
         if not to:
+            print(f"[line] no subscribers, skip push for {alert['station']}")
             return
         if self.sent_today + len(to) > self.daily_limit:
             print(
