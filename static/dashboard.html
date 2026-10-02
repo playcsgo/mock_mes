@@ -14,7 +14,7 @@
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
          font: 15px/1.5 system-ui, "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
-  header { display: flex; align-items: baseline; gap: 16px; padding: 18px 24px;
+  header { position: relative; display: flex; align-items: baseline; gap: 16px; padding: 18px 24px;
            border-bottom: 1px solid var(--line); }
   header h1 { margin: 0; font-size: 20px; font-weight: 600; }
   #conn { font-family: var(--mono); font-size: 13px; color: var(--muted); }
@@ -23,6 +23,26 @@
           white-space: nowrap; flex-shrink: 0; }
   #lang:hover { color: var(--text); border-color: var(--muted); }
   #lang:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
+  #join-btn:not([hidden]) + #lang { margin-left: 0; }
+  #join-btn { margin-left: auto; font: inherit; font-size: 13px; color: var(--muted);
+              background: none; border: 1px solid var(--line); padding: 4px 10px;
+              white-space: nowrap; flex-shrink: 0; cursor: pointer; }
+  #join-btn[hidden] { display: none; }
+  #join-btn:hover, #join-btn[aria-expanded="true"] { color: var(--text); border-color: var(--muted); }
+  #join-btn:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
+  #join-card { position: absolute; top: 100%; right: 24px; z-index: 5; margin-top: 8px;
+               width: 300px; max-width: calc(100vw - 32px); padding: 14px;
+               background: var(--panel); border: 1px solid var(--line);
+               display: flex; gap: 14px; align-items: center; }
+  #join-card[hidden] { display: none; }
+  @media (max-width: 600px) {
+    header { flex-wrap: wrap; row-gap: 8px; }
+    header h1 { flex: 1 0 100%; }
+  }
+  #join-card .qr { flex: none; width: 104px; height: 104px; background: #fff; }
+  #join-card .qr img { display: block; width: 100%; height: 100%; }
+  #join-card p { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+  #join-card a { font-family: var(--mono); font-size: 13px; color: var(--ok); }
   #conn.on::before  { content: "● "; color: var(--ok); }
   #conn.off::before { content: "● "; color: var(--bad); }
   main { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; padding: 20px 24px; }
@@ -79,7 +99,15 @@
 <header>
   <h1 data-t="title"></h1>
   <span id="conn" class="off" data-t="offline"></span>
+  <button id="join-btn" type="button" aria-expanded="false" aria-controls="join-card" data-t="join" hidden></button>
   <a id="lang"></a>
+  <div id="join-card" hidden role="dialog">
+    <div class="qr"><img id="join-qr" alt="LINE QR code" width="104" height="104"></div>
+    <div>
+      <p data-t="joinNote"></p>
+      <a id="join-link" target="_blank" rel="noopener"></a>
+    </div>
+  </div>
 </header>
 
 <main>
@@ -124,6 +152,8 @@ const TEXT = {
     wakeNote: "這個 demo 跑在免費方案上，沒人使用時會自動休眠以節省資源。第一次開啟大約需要一分鐘。",
     waited: "已等待",
     seconds: "秒",
+    join: "加入 LINE 告警",
+    joinNote: "用 LINE 掃描，或點下方連結。加入後會收到良率告警，也能直接認領。",
     other: "English",
     alert: (time, station, rate, th) =>
       `⚠ ${time}  ${station} 良率 ${rate}%，低於門檻 ${th}%`,
@@ -145,6 +175,8 @@ const TEXT = {
     wakeNote: "This demo runs on a free plan and sleeps when nobody is using it. The first visit takes about a minute.",
     waited: "Waited",
     seconds: "s",
+    join: "Join LINE alerts",
+    joinNote: "Scan with LINE or open the link. You'll get yield alerts and can claim them in chat.",
     other: "中文",
     alert: (time, station, rate, th) =>
       `⚠ ${time}  ${station} yield ${rate}%, below the ${th}% threshold`,
@@ -165,6 +197,21 @@ langLink.textContent = T.other;
 langLink.href = LANG === "en" ? "cn" : "en";
 langLink.hreflang = LANG === "en" ? "zh-Hant" : "en";
 
+const joinBtn = document.getElementById("join-btn");
+const joinCard = document.getElementById("join-card");
+joinCard.setAttribute("aria-label", T.join);
+function setJoin(open) {
+  joinCard.hidden = !open;
+  joinBtn.setAttribute("aria-expanded", String(open));
+}
+joinBtn.addEventListener("click", () => setJoin(joinCard.hidden));
+document.addEventListener("click", (e) => {
+  if (!joinCard.hidden && !joinCard.contains(e.target) && !joinBtn.contains(e.target)) setJoin(false);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !joinCard.hidden) { setJoin(false); joinBtn.focus(); }
+});
+
 let stations = {};
 const FEED_MAX = 50;
 
@@ -173,6 +220,22 @@ const API_BASE = IS_LOCAL ? "" : "https://mock-mes.onrender.com";
 const WS_BASE = API_BASE
   ? API_BASE.replace(/^http/, "ws")
   : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
+
+async function loadJoin() {
+  try {
+    const res = await fetch(`${API_BASE}/line/join`);
+    if (!res.ok) return;
+    const info = await res.json();
+    document.getElementById("join-qr").src = info.qr;
+    const link = document.getElementById("join-link");
+    link.href = info.url;
+    link.textContent = info.id;
+    joinBtn.hidden = false;
+  } catch {
+    // no QR is fine: the button just stays hidden
+  }
+}
+loadJoin();
 
 async function gql(query, variables = {}) {
   const res = await fetch(`${API_BASE}/graphql`, {

@@ -1,8 +1,9 @@
 import base64
 import hashlib
 import hmac
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, quote
 
+import segno
 from fastapi import APIRouter, HTTPException, Request
 
 from app import line_commands, repository
@@ -25,6 +26,17 @@ def valid_signature(body: bytes, signature: str | None, secret: str) -> bool:
 
     mac = hmac.new(secret.encode(), body, hashlib.sha256).digest()
     return hmac.compare_digest(base64.b64encode(mac).decode(), signature)
+
+
+@router.get("/line/join")
+async def join_info():
+    """Add-friend link and QR for the dashboard; 404 when no bot ID is set."""
+    basic_id = settings.line_bot_basic_id.strip().removeprefix("@")
+    if not basic_id:
+        raise HTTPException(status_code=404, detail="LINE bot ID not configured")
+    url = f"https://line.me/R/ti/p/@{quote(basic_id)}"
+    qr = segno.make(url, error="m").svg_data_uri(scale=1, border=2, omitsize=True)
+    return {"id": f"@{basic_id}", "url": url, "qr": qr}
 
 
 @router.post("/line/callback")

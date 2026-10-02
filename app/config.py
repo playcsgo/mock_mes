@@ -19,6 +19,7 @@ class Settings(BaseSettings):
 
     line_channel_access_token: str = ""
     line_channel_secret: str = ""
+    line_bot_basic_id: str = ""  # e.g. @445lbcso; empty hides the dashboard QR
     line_daily_push_limit: int = 20
 
     allowed_origins: str = (
