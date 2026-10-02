@@ -159,7 +159,7 @@ class LineNotifier:
             alert = await self.queue.get()
             try:
                 await self.send(alert)
-            except Exception as e:  # one bad push must not kill the worker
+            except LineApiError as e:  # one bad push must not kill the worker
                 print(f"[line] unexpected error: {e!r}")
             finally:
                 self.queue.task_done()
