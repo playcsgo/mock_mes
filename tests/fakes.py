@@ -29,6 +29,17 @@ class FakeCollection:
             doc = {**filter, **update.get("$set", {}), **update.get("$setOnInsert", {})}
             await self.insert_one(doc)
 
+    async def find_one(self, filter: dict) -> dict | None:
+        return next((dict(d) for d in self.docs if self._match(d, filter)), None)
+
+    async def find_one_and_update(self, filter: dict, update: dict, **options):
+        # the real one is atomic; a list scan with no await in between is too
+        for doc in self.docs:
+            if self._match(doc, filter):
+                doc.update(update.get("$set", {}))
+                return dict(doc)
+        return None
+
     async def delete_one(self, filter: dict) -> None:
         for i, doc in enumerate(self.docs):
             if self._match(doc, filter):

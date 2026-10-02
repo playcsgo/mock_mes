@@ -29,3 +29,31 @@ def test_alerts_query_ignores_extra_fields_stored_on_the_alert(monkeypatch):
 
     assert r.errors is None
     assert r.data['alerts'][0]['station'] == 'ST-03'
+
+
+def test_alerts_query_exposes_who_claimed_it(monkeypatch):
+    ts = datetime(2026, 9, 29, tzinfo=timezone.utc)
+    stored = [
+        {"id": "a1", "station": "ST-03", "yield_rate": 0.7, "window": 50,
+         "threshold": 0.9, "ts": ts, "ack_by": "Amy", "ack_at": ts},
+        # alerts stored before claiming existed have no ack fields at all
+        {"id": "a0", "station": "ST-03", "yield_rate": 0.7, "window": 50,
+         "threshold": 0.9, "ts": ts},
+    ]
+
+    async def fake_latest(db, limit):
+        return stored
+
+    monkeypatch.setattr(repository, "latest_alerts", fake_latest)
+
+    async def run():
+        return await schema.execute(
+            "{ alerts { id ackBy ackAt } }", context_value={"db": FakeDB()}
+        )
+
+    r = asyncio.run(run())
+
+    assert r.errors is None
+    assert r.data["alerts"][0]["ackBy"] == "Amy"
+    assert r.data["alerts"][0]["ackAt"] is not None
+    assert r.data["alerts"][1]["ackBy"] is None

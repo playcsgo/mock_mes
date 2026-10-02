@@ -190,3 +190,13 @@ def test_worker_survives_an_unexpected_error():
     asyncio.run(run())
 
     assert len(client.calls) == 2
+
+
+def test_card_has_a_claim_button_carrying_the_alert_id():
+    from app.notifier import alert_card
+
+    button = alert_card(ALERT)["contents"]["footer"]["contents"][0]
+
+    assert button["action"]["type"] == "postback"
+    assert button["action"]["data"] == "action=ack&alert_id=a1"
+    assert "ST-03" in button["action"]["displayText"]

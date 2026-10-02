@@ -1,4 +1,5 @@
-from pymongo import ASCENDING, DESCENDING
+from bson import ObjectId
+from pymongo import ASCENDING, DESCENDING, ReturnDocument
 from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import OperationFailure
 
@@ -145,9 +146,27 @@ async def top_failures(
 
 
 async def insert_alert(db: AsyncDatabase, alert: dict) -> dict:
-    doc = {**alert, "ts": utc_now()}
+    doc = {**alert, "ts": utc_now(), "ack_by": None, "ack_at": None}
     await db[ALERTS].insert_one(doc)
     return to_public(doc)
+
+
+def _oid(id: str):
+    return ObjectId(id) if ObjectId.is_valid(id) else id
+
+
+async def ack_alert(
+    db: AsyncDatabase, alert_id: str, by: str
+) -> tuple[dict, bool] | None:
+    doc = await db[ALERTS].find_one_and_update(
+        {"_id": _oid(alert_id), "ack_by": None},
+        {"$set": {"ack_by": by, "ack_at": utc_now()}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if doc:
+        return to_public(doc), True
+    doc = await db[ALERTS].find_one({"_id": _oid(alert_id)})
+    return (to_public(doc), False) if doc else None
 
 
 async def latest_alerts(db: AsyncDatabase, limit: int = 10) -> list[dict]:

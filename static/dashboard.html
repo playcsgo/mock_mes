@@ -65,6 +65,7 @@
   #alerts li { background: #3a1d1f; border-left: 4px solid var(--bad); color: #ffd6d6;
                padding: 8px 12px; margin-bottom: 6px; font-family: var(--mono); font-size: 14px; }
   #alerts li.new { animation: flash 1s 3; }
+  #alerts li.acked { background: #1d2f24; border-left-color: var(--ok); color: #c8f0d4; }
   @keyframes flash { 50% { background: #6b2226; } }
 </style>
 </head>
@@ -126,6 +127,7 @@ const TEXT = {
     other: "English",
     alert: (time, station, rate, th) =>
       `⚠ ${time}  ${station} 良率 ${rate}%，低於門檻 ${th}%`,
+    acked: (name) => `　✔ 已由 ${name} 處理`,
   },
   en: {
     pageTitle: "Line Monitor — Production Dashboard",
@@ -146,6 +148,7 @@ const TEXT = {
     other: "中文",
     alert: (time, station, rate, th) =>
       `⚠ ${time}  ${station} yield ${rate}%, below the ${th}% threshold`,
+    acked: (name) => `  ✔ handled by ${name}`,
   },
 };
 
@@ -187,7 +190,7 @@ async function loadStats() {
     query {
       yieldByStation { station total passed }
       topFailures(limit: 8) { station failCode count }
-      alerts(limit: 5) { station yieldRate threshold ts }
+      alerts(limit: 5) { id station yieldRate threshold ts ackBy }
     }`);
   stations = {};
   for (const s of data.yieldByStation) {
@@ -254,10 +257,20 @@ function addAlert(a, isNew) {
   const time = new Date(a.ts).toLocaleTimeString(LOCALE);
   const rate = (a.yieldRate * 100).toFixed(1);
   const th = (a.threshold * 100).toFixed(0);
-  li.textContent = T.alert(time, a.station, rate, th);
+  li.dataset.id = a.id;
+  li.dataset.text = T.alert(time, a.station, rate, th);
+  li.textContent = li.dataset.text;
+  if (a.ackBy) markAcked(li, a.ackBy);
   const box = document.getElementById("alerts");
   box.prepend(li);
   while (box.children.length > ALERT_MAX) box.lastChild.remove();
+}
+
+// someone pressed 認領 in LINE: turn the alert green and show who
+function markAcked(li, name) {
+  li.classList.remove("new");
+  li.classList.add("acked");
+  li.textContent = li.dataset.text + T.acked(name);
 }
 
 let retryDelay = 1000;
@@ -287,8 +300,11 @@ function connectWs() {
       addFeed(r);
     } else if (msg.type === "alert") {
       const a = msg.data;
-      addAlert({ station: a.station, yieldRate: a.yield_rate,
-                 threshold: a.threshold, ts: a.ts }, true);
+      addAlert({ id: a.id, station: a.station, yieldRate: a.yield_rate,
+                 threshold: a.threshold, ts: a.ts, ackBy: a.ack_by }, true);
+    } else if (msg.type === "ack") {
+      const li = document.querySelector(`#alerts li[data-id="${CSS.escape(msg.data.id)}"]`);
+      if (li) markAcked(li, msg.data.ack_by);
     }
   };
 }

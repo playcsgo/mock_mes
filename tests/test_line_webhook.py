@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -52,11 +53,8 @@ def post(app, events: list[dict], signature: str | None = None):
 
 
 def follow(user_id: str) -> dict:
-    return {
-        "type": "follow",
-        "replyToken": "rt-1",
-        "source": {"type": "user", "userId": user_id},
-    }
+    return {"type": "follow", "replyToken": "rt-1",
+            "source": {"type": "user", "userId": user_id}}
 
 
 def unfollow(user_id: str) -> dict:
@@ -119,11 +117,7 @@ def test_reply_failure_still_subscribes_and_returns_200(secret):
 
 def test_group_source_without_user_id_is_ignored(secret):
     app = make_app()
-    event = {
-        "type": "follow",
-        "replyToken": "rt",
-        "source": {"type": "group", "groupId": "G1"},
-    }
+    event = {"type": "follow", "replyToken": "rt", "source": {"type": "group", "groupId": "G1"}}
     r = post(app, [event])
 
     assert r.status_code == 200
@@ -131,12 +125,9 @@ def test_group_source_without_user_id_is_ignored(secret):
 
 
 def text_message(text: str, source: dict | None = None) -> dict:
-    return {
-        "type": "message",
-        "replyToken": "rt-msg",
-        "source": source or {"type": "user", "userId": "U1"},
-        "message": {"type": "text", "text": text},
-    }
+    return {"type": "message", "replyToken": "rt-msg",
+            "source": source or {"type": "user", "userId": "U1"},
+            "message": {"type": "text", "text": text}}
 
 
 @pytest.fixture
@@ -157,9 +148,8 @@ def test_text_message_is_answered_with_reply_api(secret, fake_answer):
 
     assert r.status_code == 200
     assert fake_answer == ["ST-03"]
-    assert client.replies == [
-        {"token": "rt-msg", "messages": [{"type": "text", "text": "answer to ST-03"}]}
-    ]
+    assert client.replies == [{"token": "rt-msg", "messages": [
+        {"type": "text", "text": "answer to ST-03"}]}]
 
 
 def test_text_message_in_a_group_is_answered_too(secret, fake_answer):
@@ -176,4 +166,97 @@ def test_non_text_message_is_ignored(secret, fake_answer):
     post(make_app(client), [event])
 
     assert fake_answer == []
+    assert client.replies == []
+
+
+class FakeProfileClient(FakeReplyClient):
+    def __init__(self, name: str | None = "Amy", **kw) -> None:
+        super().__init__(**kw)
+        self.name = name
+
+    async def display_name(self, user_id: str) -> str:
+        if self.name is None:
+            raise LineApiError(404)
+        return self.name
+
+
+@pytest.fixture
+def broadcasts(monkeypatch):
+    sent: list[dict] = []
+
+    async def fake_broadcast(message):
+        sent.append(message)
+
+    monkeypatch.setattr(line_webhook.manager, "broadcast", fake_broadcast)
+    return sent
+
+
+def claim(alert_id: str, user_id: str = "U1") -> dict:
+    return {"type": "postback", "replyToken": "rt-pb",
+            "source": {"type": "user", "userId": user_id},
+            "postback": {"data": f"action=ack&alert_id={alert_id}"}}
+
+
+def app_with_alert(client):
+    import asyncio
+
+    app = make_app(client)
+    alert = {"station": "ST-03", "yield_rate": 0.7, "window": 50, "threshold": 0.9}
+    doc = asyncio.run(repository.insert_alert(app.state.db, alert))
+    return app, doc["id"]
+
+
+def reply_text(client) -> str:
+    return client.replies[-1]["messages"][0]["text"]
+
+
+def test_claim_records_name_tells_user_and_updates_dashboard(secret, broadcasts):
+    client = FakeProfileClient("Amy")
+    app, alert_id = app_with_alert(client)
+    r = post(app, [claim(alert_id)])
+
+    assert r.status_code == 200
+    assert app.state.db[repository.ALERTS].docs[0]["ack_by"] == "Amy"
+    assert "已認領" in reply_text(client)
+    assert broadcasts[0]["type"] == "ack"
+    assert broadcasts[0]["data"]["id"] == alert_id
+    assert broadcasts[0]["data"]["ack_by"] == "Amy"
+
+
+def test_second_claim_is_told_who_already_has_it(secret, broadcasts):
+    client = FakeProfileClient("Amy")
+    app, alert_id = app_with_alert(client)
+    post(app, [claim(alert_id, "U1")])
+    client.name = "Bob"
+    post(app, [claim(alert_id, "U2")])
+
+    assert app.state.db[repository.ALERTS].docs[0]["ack_by"] == "Amy"
+    assert "Amy" in reply_text(client)
+    assert len(broadcasts) == 1  # dashboard only hears about the winner
+
+
+def test_claim_of_missing_alert_is_answered_politely(secret, broadcasts):
+    client = FakeProfileClient()
+    app, _ = app_with_alert(client)
+    post(app, [claim("does-not-exist")])
+
+    assert "找不到" in reply_text(client)
+    assert broadcasts == []
+
+
+def test_profile_lookup_failure_falls_back_to_a_generic_name(secret, broadcasts):
+    client = FakeProfileClient(name=None)
+    app, alert_id = app_with_alert(client)
+    post(app, [claim(alert_id)])
+
+    assert app.state.db[repository.ALERTS].docs[0]["ack_by"] == line_webhook.UNKNOWN_NAME
+
+
+def test_unknown_postback_is_ignored(secret, broadcasts):
+    client = FakeProfileClient()
+    app, _ = app_with_alert(client)
+    event = {**claim("x"), "postback": {"data": "action=something-else"}}
+    r = post(app, [event])
+
+    assert r.status_code == 200
     assert client.replies == []

@@ -1,16 +1,20 @@
 import base64
 import hashlib
 import hmac
+from urllib.parse import parse_qs
 
 from fastapi import APIRouter, HTTPException, Request
 
 from app import line_commands, repository
 from app.config import settings
 from app.line_client import LineApiError
+from app.ws_manager import manager
 
 router = APIRouter()
 
+
 WELCOME = "已訂閱產線良率告警。任一站良率低於門檻時會通知你。\n\n" + line_commands.HELP
+UNKNOWN_NAME = "LINE 使用者"
 
 
 def valid_signature(body: bytes, signature: str | None, secret: str) -> bool:
@@ -40,6 +44,8 @@ async def callback(request: Request):
         if kind == "message" and event["message"]["type"] == "text":
             text = await line_commands.answer(db, event["message"]["text"])
             await _reply(client, event, text)
+        elif kind == "postback" and user_id:
+            await _postback(db, client, event, user_id)
         elif kind == "follow" and user_id:
             await repository.add_subscriber(db, user_id)
             await _reply(client, event, WELCOME)
@@ -47,6 +53,45 @@ async def callback(request: Request):
             await repository.remove_subscriber(db, user_id)
 
     return {}  # LINE only care about status code 200
+
+
+async def _postback(db, client, event: dict, user_id: str) -> None:
+    data = parse_qs(event["postback"]["data"])
+    if data.get("action") != ["ack"] or "alert_id" not in data:
+        return
+
+    name = await _display_name(client, user_id)
+    result = await repository.ack_alert(db, data["alert_id"][0], name)
+    if result is None:
+        await _reply(client, event, "找不到這則告警，可能已經過期。")
+        return
+
+    doc, claimed = result
+    if not claimed:
+        await _reply(client, event, f"{doc['station']} 已由 {doc['ack_by']} 認領。")
+        return
+
+    await manager.broadcast(
+        {
+            "type": "ack",
+            "data": {
+                "id": doc["id"],
+                "station": doc["station"],
+                "ack_by": doc["ack_by"],
+                "ack_at": doc["ack_at"],
+            },
+        }
+    )
+    await _reply(client, event, f"已認領 {doc['station']}，看板上會顯示由你處理。")
+
+
+async def _display_name(client, user_id: str) -> str:
+    if client is None:
+        return UNKNOWN_NAME
+    try:
+        return await client.display_name(user_id)
+    except LineApiError:
+        return UNKNOWN_NAME
 
 
 async def _reply(client, event: dict, text: str) -> None:

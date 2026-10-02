@@ -59,16 +59,20 @@ class Alert:
     window: int
     threshold: float
     ts: datetime
+    ack_by: str | None = None
+    ack_at: datetime | None = None
 
     @classmethod
-    def from_doc(cls, d: dict) -> 'Alert':
+    def from_doc(cls, d: dict) -> "Alert":
         return cls(
-            id=d['id'],
-            station=d['station'],
-            yield_rate=d['yield_rate'],
-            window=d['window'],
-            threshold=d['threshold'],
-            ts=d['ts'],
+            id=d["id"],
+            station=d["station"],
+            yield_rate=d["yield_rate"],
+            window=d["window"],
+            threshold=d["threshold"],
+            ts=d["ts"],
+            ack_by=d.get("ack_by"),
+            ack_at=d.get("ack_at"),
         )
 
 

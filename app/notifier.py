@@ -58,6 +58,24 @@ def alert_card(alert: dict) -> dict:
                     row("樣本數", f"最近 {alert['window']} 筆"),
                 ],
             },
+            "footer": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "button",
+                        "style": "primary",
+                        "color": "#D93025",
+                        # postback: LINE sends `data` to our webhook, not a URL
+                        "action": {
+                            "type": "postback",
+                            "label": "認領",
+                            "data": f"action=ack&alert_id={alert['id']}",
+                            "displayText": f"我來處理 {station}",
+                        },
+                    }
+                ],
+            },
         },
     }
 

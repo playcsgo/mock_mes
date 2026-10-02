@@ -30,13 +30,22 @@ class LineClient:
             "/message/reply", {"replyToken": reply_token, "messages": messages}
         )
 
+    async def display_name(self, user_id: str) -> str:
+        r = await self._request("GET", f"/profile/{user_id}")
+        return r.json()["displayName"]
+
     async def _post(self, path: str, body: dict, headers: dict | None = None) -> None:
+        await self._request("POST", path, json=body, headers=headers)
+
+    async def _request(self, method: str, path: str, **kw) -> httpx.Response:
         try:
-            r = await self._http.post(API + path, json=body, headers=headers)
+            r = await self._http.request(method, API + path, **kw)
         except httpx.HTTPError as e:
             raise LineApiError(None, str(e)) from e
         if r.status_code >= 300:
             raise LineApiError(r.status_code, r.text)
+
+        return r
 
     async def close(self) -> None:
         await self._http.aclose()
