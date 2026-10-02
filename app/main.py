@@ -10,7 +10,7 @@ from app.db import create_client
 from app.gql.schema import graphql_router
 from app.line_client import LineClient
 from app.notifier import LineNotifier
-from app.routes import dashboard, health, ingest, results
+from app.routes import dashboard, health, ingest, line_webhook, results
 
 
 @asynccontextmanager
@@ -79,3 +79,4 @@ app.include_router(results.router)
 app.include_router(ingest.router)
 app.include_router(dashboard.router)
 app.include_router(graphql_router, prefix="/graphql")
+app.include_router(line_webhook.router)
