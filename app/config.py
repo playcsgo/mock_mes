@@ -43,12 +43,16 @@ def ingest_allowed(token: str | None) -> bool:
     return bool(token) and secrets.compare_digest(token, settings.ingest_token)
 
 
-def is_allowed_origin(origin: str | None) -> bool:
+def is_allowed_origin(origin: str | None, host: str | None = None) -> bool:
     if not origin:
         return True  # for postmain or cmd test
     if origin in settings.origin_list:
         return True
-    return urlparse(origin).hostname in ("localhost", "127.0.0.1")
+    parsed = urlparse(origin)
+    if parsed.hostname in ("localhost", "127.0.0.1"):
+        return True
+    # same-origin: the page was served by this very server (any deploy URL)
+    return bool(host) and parsed.netloc == host
 
 
 settings = Settings()

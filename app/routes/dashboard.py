@@ -23,7 +23,9 @@ async def dashboard_page_i18n(lang: str):
 
 @router.websocket("/ws/dashboard")
 async def dashboard_ws(websocket: WebSocket):
-    if not is_allowed_origin(websocket.headers.get("origin")):
+    if not is_allowed_origin(
+        websocket.headers.get("origin"), websocket.headers.get("host")
+    ):
         await websocket.close(code=1008)
         return
 
