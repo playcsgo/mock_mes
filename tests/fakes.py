@@ -3,6 +3,29 @@
 from pymongo.errors import OperationFailure
 
 
+class FakeCursor:
+    def __init__(self, rows: list[dict]) -> None:
+        self.rows = rows
+
+    def sort(self, key: str, direction: int = 1) -> "FakeCursor":
+        self.rows = sorted(self.rows, key=lambda d: d[key], reverse=direction < 0)
+        return self
+
+    def limit(self, n: int) -> "FakeCursor":
+        self.rows = self.rows[:n]
+        return self
+
+    async def to_list(self) -> list[dict]:
+        return [dict(d) for d in self.rows]
+
+    def __aiter__(self):
+        async def gen():
+            for d in self.rows:
+                yield dict(d)
+
+        return gen()
+
+
 class FakeCollection:
     def __init__(self) -> None:
         self.docs: list[dict] = []
@@ -47,13 +70,10 @@ class FakeCollection:
                 return
 
     def find(self, filter: dict | None = None, projection: dict | None = None):
-        rows = [d for d in self.docs if self._match(d, filter or {})]
+        return FakeCursor([d for d in self.docs if self._match(d, filter or {})])
 
-        async def gen():
-            for d in rows:
-                yield dict(d)
-
-        return gen()
+    async def distinct(self, key: str) -> list:
+        return sorted({d[key] for d in self.docs if key in d})
 
     async def count_documents(self, filter: dict | None = None) -> int:
         if not filter:

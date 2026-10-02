@@ -49,7 +49,7 @@
   @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
   h2 { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--muted); }
 
-  #stations { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+  #stations { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
   .tile { background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--muted);
           padding: 12px 14px; }
   .tile.ok   { border-top-color: var(--ok); }
@@ -57,7 +57,10 @@
   .tile.bad  { border-top-color: var(--bad); }
   .tile .name { font-family: var(--mono); color: var(--muted); }
   .tile .rate { font-family: var(--mono); font-size: 40px; font-weight: 700; line-height: 1.1; }
-  .tile.bad .rate { color: var(--bad); }
+  .tile.bad .rate.recent { color: var(--bad); }
+  .tile .rate.total { font-size: 26px; font-weight: 600; }
+  .tile .label { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .tile .label.split { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 10px; }
   .tile .count { font-family: var(--mono); font-size: 13px; color: var(--muted); }
 
   section + section { margin-top: 24px; }
@@ -142,7 +145,9 @@ const TEXT = {
     online: "即時連線中",
     offline: "未連線",
     reconnecting: "斷線，重新連線中…",
-    yieldHead: "各站良率（最近一週，即時更新）",
+    yieldHead: "各站良率（即時更新）",
+    totalLabel: "總良率（最近一週）",
+    recentLabel: (n) => `最近 ${n} 筆`,
     failHead: "最常見失敗原因（最近一週，每 30 秒更新）",
     feedHead: "即時測試紀錄",
     colStation: "站",
@@ -165,7 +170,9 @@ const TEXT = {
     online: "Live",
     offline: "Not connected",
     reconnecting: "Disconnected, reconnecting…",
-    yieldHead: "Yield by station (last 7 days, live)",
+    yieldHead: "Yield by station (live)",
+    totalLabel: "Overall (last 7 days)",
+    recentLabel: (n) => `Last ${n} results`,
     failHead: "Top failure codes (last 7 days, refreshed every 30s)",
     feedHead: "Live test results",
     colStation: "Station",
@@ -213,6 +220,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 let stations = {};
+const RECENT_N = 100;
 const FEED_MAX = 50;
 
 const IS_LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname);
@@ -252,12 +260,16 @@ async function loadStats() {
   const data = await gql(`
     query {
       yieldByStation { station total passed }
+      recentResults(limit: ${RECENT_N}) { station passed }
       topFailures(limit: 8) { station failCode count }
       alerts(limit: 5) { id station yieldRate threshold ts ackBy }
     }`);
   stations = {};
   for (const s of data.yieldByStation) {
-    stations[s.station] = { total: s.total, passed: s.passed };
+    stations[s.station] = { total: s.total, passed: s.passed, recent: [] };
+  }
+  for (const r of data.recentResults) {
+    (stations[r.station] ??= { total: 0, passed: 0, recent: [] }).recent = r.passed;
   }
   renderStations();
   renderFailures(data.topFailures);
@@ -276,17 +288,29 @@ function level(rate) {
 function renderStations() {
   const box = document.getElementById("stations");
   box.replaceChildren();
+  const mk = (cls, text) => {
+    const d = document.createElement("div");
+    d.className = cls;
+    d.textContent = text;
+    return d;
+  };
+  const pct = (x) => (x * 100).toFixed(1) + "%";
   for (const name of Object.keys(stations).sort()) {
-    const { total, passed } = stations[name];
-    const rate = total ? passed / total : 1;
+    const { total, passed, recent } = stations[name];
+    const totalRate = total ? passed / total : 1;
+    const recentPassed = recent.filter(Boolean).length;
+    const recentRate = recent.length ? recentPassed / recent.length : totalRate;
     const tile = document.createElement("div");
-    tile.className = "tile " + level(rate);
-    const n = document.createElement("div"); n.className = "name"; n.textContent = name;
-    const r = document.createElement("div"); r.className = "rate";
-    r.textContent = (rate * 100).toFixed(1) + "%";
-    const c = document.createElement("div"); c.className = "count";
-    c.textContent = `${passed} / ${total} pass`;
-    tile.append(n, r, c);
+    tile.className = "tile " + level(recentRate);
+    tile.append(
+      mk("name", name),
+      mk("label", T.recentLabel(recent.length)),
+      mk("rate recent", pct(recentRate)),
+      mk("count", `${recentPassed} / ${recent.length} pass`),
+      mk("label split", T.totalLabel),
+      mk("rate total", pct(totalRate)),
+      mk("count", `${passed} / ${total} pass`),
+    );
     box.append(tile);
   }
 }
@@ -356,9 +380,11 @@ function connectWs() {
     const msg = JSON.parse(event.data);
     if (msg.type === "result") {
       const r = msg.data;
-      const s = stations[r.station] ?? (stations[r.station] = { total: 0, passed: 0 });
+      const s = stations[r.station] ?? (stations[r.station] = { total: 0, passed: 0, recent: [] });
       s.total += 1;
       if (r.result === "pass") s.passed += 1;
+      s.recent.push(r.result === "pass");
+      if (s.recent.length > RECENT_N) s.recent.shift();
       renderStations();
       addFeed(r);
     } else if (msg.type === "alert") {

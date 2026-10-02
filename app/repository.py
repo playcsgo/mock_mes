@@ -116,6 +116,23 @@ async def yield_by_station(db: AsyncDatabase, lot=None, since=None) -> list[dict
     return await cursor.to_list()
 
 
+async def recent_results_by_station(db: AsyncDatabase, limit: int = 100) -> list[dict]:
+    """Pass/fail of the latest `limit` results of each station, oldest first."""
+    rows = []
+    for station in sorted(await db[RESULTS].distinct("station")):
+        cursor = (
+            db[RESULTS]
+            .find({"station": station}, {"result": 1, "_id": 0})
+            .sort("ts", DESCENDING)
+            .limit(limit)
+        )
+        docs = await cursor.to_list()
+        rows.append(
+            {"station": station, "passed": [d["result"] == "pass" for d in reversed(docs)]}
+        )
+    return rows
+
+
 async def top_failures(
     db: AsyncDatabase, station=None, lot=None, since=None, limit: int = 5
 ) -> list[dict]:

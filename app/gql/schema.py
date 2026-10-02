@@ -44,6 +44,12 @@ class StationYield:
     yield_rate: float
 
 
+@strawberry.type(description="pass/fail of the latest results of one station")
+class RecentResults:
+    station: str
+    passed: list[bool]  # oldest first
+
+
 @strawberry.type(description="fail stastic")
 class FailureCount:
     station: str
@@ -118,6 +124,13 @@ class Query:
             info.context["db"], lot=lot, since=minutes_ago(since_minutes)
         )
         return [StationYield(**r) for r in rows]
+
+    @strawberry.field(description="latest results per station, for the rolling yield")
+    async def recent_results(self, info: Info, limit: int = 100) -> list[RecentResults]:
+        rows = await repository.recent_results_by_station(
+            info.context["db"], limit=max(1, min(limit, 500))
+        )
+        return [RecentResults(**r) for r in rows]
 
     @strawberry.field(description="top failure cause")
     async def top_failures(
