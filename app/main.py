@@ -8,6 +8,8 @@ from app.alerts import YieldMonitor
 from app.config import LOCALHOST_RE, settings
 from app.db import create_client
 from app.gql.schema import graphql_router
+from app.line_client import LineClient
+from app.notifier import LineNotifier
 from app.routes import dashboard, health, ingest, results
 
 
@@ -32,11 +34,29 @@ async def lifespan(app: FastAPI):
         cooldown_s=settings.alert_cooldown_s,
     )
 
+    app.state.line_client = None
+    app.state.notifier = None
+    if settings.line_channel_access_token:
+        db = app.state.db
+        app.state.line_client = LineClient(settings.line_channel_access_token)
+        app.state.notifier = LineNotifier(
+            app.state.line_client,
+            get_recipients=lambda: repository.subscriber_ids(db),
+            daily_limit=settings.line_daily_push_limit,
+        )
+        app.state.notifier.start()
+    else:
+        print("[line] LINE_CHANNEL_ACCESS_TOKEN not set, LINE push disabled")
+
     app.state.demo_task = None
 
     yield
 
     await demo.stop(app)
+    if app.state.notifier:
+        await app.state.notifier.stop()
+        await app.state.line_client.close()
+
     await client.close()
 
 

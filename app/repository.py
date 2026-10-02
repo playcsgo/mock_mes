@@ -7,12 +7,14 @@ from app.models import ResultIn, utc_now
 RESULTS = "results"
 ALERTS = "alerts"
 DATA_TTL_S = 7 * 24 * 60 * 60
+SUBSCRIBERS = "line_subscribers"
 
 
 async def ensure_indexes(db: AsyncDatabase) -> None:
     (await db[RESULTS].create_index([("station", ASCENDING), ("ts", DESCENDING)]))
     (await db[RESULTS].create_index([("lot", ASCENDING), ("ts", DESCENDING)]))
     await db[ALERTS].create_index([("ts", DESCENDING)])
+    await db[SUBSCRIBERS].create_index("user_id", unique=True)
 
     await ensure_ttl_index(db, RESULTS)
     await ensure_ttl_index(db, ALERTS)
@@ -53,9 +55,6 @@ async def insert_result(db: AsyncDatabase, item: ResultIn) -> dict:
     doc = item.model_dump()
     await db[RESULTS].insert_one(doc)
     return to_public(doc)
-
-
-
 
 
 def build_filter(station=None, lot=None, result=None, since=None, until=None) -> dict:
@@ -155,3 +154,20 @@ async def latest_alerts(db: AsyncDatabase, limit: int = 10) -> list[dict]:
     limit = max(1, min(limit, 100))
     cursor = db[ALERTS].find().sort("ts", DESCENDING).limit(limit)
     return [to_public(d) async for d in cursor]
+
+
+async def add_subscriber(db: AsyncDatabase, user_id: str) -> None:
+    await db[SUBSCRIBERS].update_one(
+        {"user_id": user_id},
+        {"$setOnInsert": {"since": utc_now()}},
+        upsert=True,
+    )
+
+
+async def remove_subscriber(db: AsyncDatabase, user_id: str) -> None:
+    await db[SUBSCRIBERS].delete_one({"user_id": user_id})
+
+
+async def subscriber_ids(db: AsyncDatabase) -> list[str]:
+    cursor = db[SUBSCRIBERS].find({}, {"user_id": 1, "_id": 0})
+    return [d["user_id"] async for d in cursor]

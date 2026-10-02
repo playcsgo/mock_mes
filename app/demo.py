@@ -129,7 +129,7 @@ async def _run(app) -> None:
                     **make_record(station, lot, n, fail_rate_for(station, BAD_RATE))
                 )
 
-                await pipeline.handle_result(db, monitor, item)
+                await pipeline.handle_result(db, monitor, item, app.state.notifier)
 
             gap = TICK_S / len(STATIONS) * random.uniform(0.7, 1.3) - (
                 time.monotonic() - t0

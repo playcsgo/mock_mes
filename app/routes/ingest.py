@@ -17,6 +17,7 @@ async def station_ws(websocket: WebSocket):
     await websocket.accept()
     db = websocket.app.state.db
     monitor = websocket.app.state.monitor
+    notifier = websocket.app.state.notifier
 
     try:
         while True:
@@ -33,7 +34,7 @@ async def station_ws(websocket: WebSocket):
                 )
                 continue
 
-            doc = await pipeline.handle_result(db, monitor, item)
+            doc = await pipeline.handle_result(db, monitor, item, notifier)
 
             await websocket.send_json({"ok": True, "id": doc["id"]})
     except WebSocketDisconnect:

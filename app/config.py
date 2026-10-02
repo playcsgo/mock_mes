@@ -17,6 +17,10 @@ class Settings(BaseSettings):
 
     ingest_token: str = ""
 
+    line_channel_access_token: str = ""
+    line_channel_secret: str = ""
+    line_daily_push_limit: int = 20
+
     allowed_origins: str = (
         "https://agilenpi.com,"
         "https://www.agilenpi.com,"

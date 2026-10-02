@@ -50,3 +50,37 @@ def test_no_alert_before_min_samples():
     feed(db, monitor, "fail", 10)
 
     assert len(db[repository.ALERTS].docs) == 0
+
+
+class SpyNotifier:
+    def __init__(self) -> None:
+        self.enqueued: list[dict] = []
+
+    def enqueue(self, alert: dict) -> bool:
+        self.enqueued.append(alert)
+        return True
+
+
+def test_alert_is_handed_to_notifier_with_its_id():
+    db, monitor, spy = (
+        FakeDB(),
+        YieldMonitor(min_samples=20, threshold=0.9),
+        SpyNotifier(),
+    )
+
+    async def run() -> None:
+        for _ in range(20):
+            await pipeline.handle_result(db, monitor, make_item("fail"), notifier=spy)
+
+    asyncio.run(run())
+
+    assert len(spy.enqueued) == 1
+    assert spy.enqueued[0]["id"] == db[repository.ALERTS].docs[0]["_id"]
+    assert spy.enqueued[0]["new_incident"] is True
+
+
+def test_no_notifier_configured_is_fine():
+    db, monitor = FakeDB(), YieldMonitor(min_samples=20, threshold=0.9)
+    feed(db, monitor, "fail", 20)  # notifier defaults to None
+
+    assert len(db[repository.ALERTS].docs) == 1
