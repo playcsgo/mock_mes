@@ -60,6 +60,17 @@ class Alert:
     threshold: float
     ts: datetime
 
+    @classmethod
+    def from_doc(cls, d: dict) -> 'Alert':
+        return cls(
+            id=d['id'],
+            station=d['station'],
+            yield_rate=d['yield_rate'],
+            window=d['window'],
+            threshold=d['threshold'],
+            ts=d['ts'],
+        )
+
 
 def minutes_ago(minutes: int | None) -> datetime | None:
     if minutes is None:
@@ -126,7 +137,7 @@ class Query:
     @strawberry.field(description="latest alerts, newest first")
     async def alerts(self, info: Info, limit: int = 10) -> list[Alert]:
         rows = await repository.latest_alerts(info.context["db"], limit)
-        return [Alert(**r) for r in rows]
+        return [Alert.from_doc(r) for r in rows]
 
 
 schema = strawberry.Schema(query=Query)

@@ -3,7 +3,7 @@ import asyncio
 from typing import Literal
 
 from app import pipeline, repository
-from app.alerts import YeildMonitor
+from app.alerts import YieldMonitor
 from app.models import ResultIn
 from tests.fakes import FakeDB
 
@@ -20,7 +20,7 @@ def make_item(result: TestResult) -> ResultIn:
     )
 
 
-def feed(db: FakeDB, monitor: YeildMonitor, result: TestResult, times: int) -> None:
+def feed(db: FakeDB, monitor: YieldMonitor, result: TestResult, times: int) -> None:
     async def run() -> None:
         for _ in range(times):
             await pipeline.handle_result(db, monitor, make_item(result))
@@ -29,7 +29,7 @@ def feed(db: FakeDB, monitor: YeildMonitor, result: TestResult, times: int) -> N
 
 
 def test_result_is_stored_and_returned_with_id():
-    db, monitor = FakeDB(), YeildMonitor()
+    db, monitor = FakeDB(), YieldMonitor()
     doc = asyncio.run(pipeline.handle_result(db, monitor, make_item("pass")))
     assert doc["id"] == "fake0"
     assert len(db[repository.RESULTS].docs) == 1
@@ -37,7 +37,7 @@ def test_result_is_stored_and_returned_with_id():
 
 
 def test_alert_is_stored_when_yield_drops():
-    db, monitor = FakeDB(), YeildMonitor(min_samples=20, threshold=0.9)
+    db, monitor = FakeDB(), YieldMonitor(min_samples=20, threshold=0.9)
     feed(db, monitor, "fail", 20)
 
     assert len(db[repository.RESULTS].docs) == 20
@@ -46,7 +46,7 @@ def test_alert_is_stored_when_yield_drops():
 
 
 def test_no_alert_before_min_samples():
-    db, monitor = FakeDB(), YeildMonitor(min_samples=20, threshold=0.9)
+    db, monitor = FakeDB(), YieldMonitor(min_samples=20, threshold=0.9)
     feed(db, monitor, "fail", 10)
 
     assert len(db[repository.ALERTS].docs) == 0

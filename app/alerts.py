@@ -2,7 +2,7 @@ import time
 from collections import deque
 
 
-class YeildMonitor:
+class YieldMonitor:
     def __init__(
         self,
         window: int = 50,
@@ -16,6 +16,7 @@ class YeildMonitor:
         self.cooldown_s = cooldown_s
         self._history: dict[str, deque[bool]] = {}
         self._last_alert: dict[str, float] = {}
+        self._in_alarm: set[str] = set()
 
     def add(self, station: str, passed: bool, now: float | None = None) -> dict | None:
         now = time.monotonic() if now is None else now
@@ -27,6 +28,7 @@ class YeildMonitor:
 
         rate = sum(history) / len(history)
         if rate >= self.threshold:
+            self._in_alarm.discard(station)
             return None
 
         last = self._last_alert.get(station)
@@ -34,9 +36,12 @@ class YeildMonitor:
             return None
 
         self._last_alert[station] = now
+        new_incident = station not in self._in_alarm
+        self._in_alarm.add(station)
         return {
             "station": station,
             "yield_rate": round(rate, 3),
             "window": len(history),
             "threshold": self.threshold,
+            "new_incident": new_incident,
         }

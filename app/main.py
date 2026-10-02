@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import demo, repository
-from app.alerts import YeildMonitor
+from app.alerts import YieldMonitor
 from app.config import LOCALHOST_RE, settings
 from app.db import create_client
 from app.gql.schema import graphql_router
@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
         else "[demo] history is already there, nothing to backfill"
     )
 
-    app.state.monitor = YeildMonitor(
+    app.state.monitor = YieldMonitor(
         window=settings.alert_window,
         min_samples=settings.alert_min_samples,
         threshold=settings.alert_threshold,
