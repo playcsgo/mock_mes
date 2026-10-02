@@ -128,3 +128,52 @@ def test_group_source_without_user_id_is_ignored(secret):
 
     assert r.status_code == 200
     assert app.state.db[repository.SUBSCRIBERS].docs == []
+
+
+def text_message(text: str, source: dict | None = None) -> dict:
+    return {
+        "type": "message",
+        "replyToken": "rt-msg",
+        "source": source or {"type": "user", "userId": "U1"},
+        "message": {"type": "text", "text": text},
+    }
+
+
+@pytest.fixture
+def fake_answer(monkeypatch):
+    asked: list[str] = []
+
+    async def answer(db, text):
+        asked.append(text)
+        return f"answer to {text}"
+
+    monkeypatch.setattr(line_webhook.line_commands, "answer", answer)
+    return asked
+
+
+def test_text_message_is_answered_with_reply_api(secret, fake_answer):
+    client = FakeReplyClient()
+    r = post(make_app(client), [text_message("ST-03")])
+
+    assert r.status_code == 200
+    assert fake_answer == ["ST-03"]
+    assert client.replies == [
+        {"token": "rt-msg", "messages": [{"type": "text", "text": "answer to ST-03"}]}
+    ]
+
+
+def test_text_message_in_a_group_is_answered_too(secret, fake_answer):
+    client = FakeReplyClient()
+    post(make_app(client), [text_message("狀態", {"type": "group", "groupId": "G1"})])
+
+    assert fake_answer == ["狀態"]
+    assert len(client.replies) == 1
+
+
+def test_non_text_message_is_ignored(secret, fake_answer):
+    client = FakeReplyClient()
+    event = {**text_message("x"), "message": {"type": "sticker"}}
+    post(make_app(client), [event])
+
+    assert fake_answer == []
+    assert client.replies == []

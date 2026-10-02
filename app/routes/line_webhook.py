@@ -4,13 +4,13 @@ import hmac
 
 from fastapi import APIRouter, HTTPException, Request
 
-from app import repository
+from app import line_commands, repository
 from app.config import settings
 from app.line_client import LineApiError
 
 router = APIRouter()
 
-WELCOME = "Success Subscribed !"
+WELCOME = "已訂閱產線良率告警。任一站良率低於門檻時會通知你。\n\n" + line_commands.HELP
 
 
 def valid_signature(body: bytes, signature: str | None, secret: str) -> bool:
@@ -34,14 +34,16 @@ async def callback(request: Request):
     db = request.app.state.db
     client = request.app.state.line_client
     for event in (await request.json()).get("events", []):
+        kind = event["type"]
         user_id = event.get("source", {}).get("userId")
 
-        if not user_id:
-            continue
-        if event["type"] == "follow":
+        if kind == "message" and event["message"]["type"] == "text":
+            text = await line_commands.answer(db, event["message"]["text"])
+            await _reply(client, event, text)
+        elif kind == "follow" and user_id:
             await repository.add_subscriber(db, user_id)
             await _reply(client, event, WELCOME)
-        elif event["type"] == "unfollow":
+        elif kind == "unfollow" and user_id:
             await repository.remove_subscriber(db, user_id)
 
     return {}  # LINE only care about status code 200
